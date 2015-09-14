@@ -1,0 +1,73 @@
+<?php
+function game_import_menu() {
+	$items['game-import'] = array(
+			'page callback' => 'game_import_page_import',
+			'access callback' => true,
+			'title' => 'Import Test',
+	);
+	
+	return $items; 
+}
+
+function game_import_cron() {
+  game_import_get_twitch_games();
+}
+
+function game_import_page_import() {
+	$games = game_import_get_twitch_games();
+	
+	dpm($games);
+	return '';
+}
+
+function game_import_get_twitch_games() {
+  // load the category taxonomy
+  $vocab = taxonomy_vocabulary_machine_name_load('stream_category');
+  //$games = stream_import_get_games();
+
+	//get all games from twitch
+	$limit = variable_get('game_import_limit', 100);
+	$headers = array('Accept: application/vnd.twitchtv.v3+json');
+	
+	$games = array();
+
+	for($offset = 0;$offset < $limit;$offset+=100) {
+		
+		$json = _curl_get('https://api.twitch.tv/kraken/games/top?limit=100&offset='.$offset, $headers);
+
+		$results = json_decode($json, true);
+		
+		foreach($results['top'] as $item) {
+      $games[] = game_import_save_game($item, $vocab->vid);
+		}
+	}		
+	
+	return $games;
+}
+
+function game_import_save_game($game, $vid) {
+  static $updated;
+  
+  if(!$updated) {
+    $updated = time();
+  }
+  
+  // Check if game exists, if so load it
+  if(!$tid = db_query("SELECT tid FROM {taxonomy_term_data} WHERE name = :game AND vid = $vid", array(':game'=>$game['game']['name']))->fetchField()) {
+    // No term, so create it
+    $term = new stdClass();
+    $term->name = $game['game']['name'];
+    $term->vocabulary_machine_name = 'stream_category';
+    $term->vid = $vid;
+  } else {
+    $term = taxonomy_term_load($tid);
+  }
+  
+  $term->field_updated['und'][0]['value'] = $updated;
+  $term->field_viewers['und'][0]['value'] = $game['viewers'];
+  $term->field_image_url['und'][0]['value'] = $game['game']['box']['large'];
+    
+  taxonomy_term_save($term);
+  
+  return $term;
+}

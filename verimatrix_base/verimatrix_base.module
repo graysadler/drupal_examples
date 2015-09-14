@@ -1,0 +1,124 @@
+<?php
+
+/**
+ * Implementation of hook_menu().
+ */
+function verimatrix_base_menu() {
+  $items['admin/content/file/upload'] = array(
+    'title' => 'Upload files',
+    'description' => 'Upload files into your media library.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('verimatrix_base_media_bulk_upload'),
+    'access arguments' => array('import media'),
+    'type' => MENU_LOCAL_ACTION,
+    'weight' => 10,
+  );
+  return $items;
+}
+
+/**
+ * Form callback for mass import.
+ */
+function verimatrix_base_media_bulk_upload($form, &$form_state) {
+  $form['plupload'] = array(
+      '#type' => 'plupload',
+      '#title' => t('Upload files'),
+      '#description' => t('Select and upload the files you want to add. Once uploaded, click the Finish button below.'),
+      '#upload_validators' => array(
+          'file_validate_extensions' => array('jpg jpeg gif png txt doc xls pdf ppt pps odt ods odp'),
+          //'my_custom_file_validator' => array('some validation criteria'),
+      ),
+      '#plupload_settings' => array(
+          'runtimes' => 'html5',
+          'chunk_size' => '1mb',
+      ),
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Finish'),  
+  );
+  
+  return $form;
+}
+
+function verimatrix_base_media_bulk_upload_submit($form, &$form_state) {
+  foreach ($form_state['values']['plupload'] as $uploaded_file) {
+    if ($uploaded_file['status'] == 'done') {
+      $data = file_get_contents($uploaded_file['tmppath']);
+      $destination = 'public://media/' . $uploaded_file['name'];
+      
+      if ($uri = file_unmanaged_save_data($data, $destination, FILE_EXISTS_RENAME)) {
+        global $user;
+        
+        // Create a file object.
+        $file = new stdClass();
+        $file->fid = NULL;
+        $file->uri = $uri;
+        $file->filename = drupal_basename($uri);
+        $file->filemime = file_get_mimetype($file->uri);
+        $file->uid = $user->uid;
+        $file->status = FILE_STATUS_PERMANENT;
+
+        // If we are renaming around an existing file (rather than a directory),
+        // use its basename for the filename.
+        if (is_file($destination)) {
+          $file->filename = drupal_basename($destination);
+        }
+      
+        file_save($file);
+      }      
+
+    }
+    else {
+      drupal_set_message(t('Error uploading some files.'), 'error');
+    }
+  }  
+}
+
+function verimatrix_base_preprocess_page(&$vars) {
+  // Check if we're getting a 404 and custom redirect if needed
+  $status = drupal_get_http_header("status");
+  if($status == "404 Not Found") {
+    if(empty($_GET['destination'])) {
+      return;
+    }
+    
+    $map = array(
+      'products' => 'solutions',
+      'product' => 'solutions',
+      'blog-tags' => 'blog',
+      'video-category' => 'resources',
+      'search' => '',
+      'partners' => 'partners',
+      'es' => 'es',
+      'press-releases' => 'resources/archive/press-releases',
+      'events' => 'events',
+      'verimatrix-university' => 'verimatrix-university',
+      'careers' => 'careers',
+      'newsletters' => 'resources',
+      'news' => 'news',
+      'company' => 'company',
+    );
+
+    $match = FALSE;
+    $find = explode('/', $_GET['destination']);
+    
+    if (empty($map[$find[0]])) {
+      return;
+    }
+
+    $options = array();
+    $found = $find[0];
+    $url = $map[$found];
+    
+    if ($found == 'video-category') {
+      $options = array('query' => array('filter' => 'video'));
+    }
+    unset($_GET['destination']);
+    
+    drupal_get_messages();
+    
+    drupal_goto($url, $options, 301);
+  }  
+}

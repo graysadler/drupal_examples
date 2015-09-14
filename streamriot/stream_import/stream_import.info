@@ -1,0 +1,14 @@
+name = Stream Import
+description = Importing of stream entities
+core = 7.x
+
+dependencies[] = stream
+;dependencies[] = views
+
+;files[] = stream.admin.inc
+;files[] = model_type.admin.inc
+;files[] = views/model.views.inc
+;files[] = views/model_handler_link_field.inc
+;files[] = views/model_handler_delete_link_field.inc
+;files[] = views/model_handler_edit_link_field.inc
+;files[] = views/model_handler_model_operations_field.inc

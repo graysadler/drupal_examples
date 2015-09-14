@@ -1,0 +1,274 @@
+<?php
+/**
+ * @file
+ * Code for the SR Core feature.
+ */
+
+include_once 'sr_core.features.inc';
+
+function sr_core_menu() {
+  $items['account'] = array(
+      'page callback' => 'sr_core_account_page',
+      'access callback' => true,
+      'type' => MENU_CALLBACK,
+      'title' => 'My Account',
+  );
+  
+  return $items;
+}
+
+function sr_core_account_page() {
+  global $user;
+  
+  if($user->uid) {
+    drupal_goto('user/'.$user->uid.'/edit');
+  } else {
+    drupal_goto('user');
+  }
+}
+
+function sr_core_ajax_user_login_callback_commands() {
+  global $user;
+  
+  if(!$user->uid) {
+    return array();
+  }
+  
+  $block = sr_core_block_view('sr_user_menu');
+  $user_menu = '<div id="block-sr-core-sr-user-menu">'.$block['content'].'</div>';
+  
+  $commands[] = ajax_command_after('#block-menu-menu-login', $user_menu);
+  $commands[] = ajax_command_remove('#block-menu-menu-login');
+  
+  
+  return $commands;
+}
+
+function sr_core_get_entities($type, $filter, $account = null) {
+  $sql = '';
+  if(!$account) {
+    global $user;
+    $account = $user;    
+  }
+  
+  $nids = array();
+  
+  switch($filter) {
+  	case 'favorites':
+  	  $flags = flag_get_user_flags('node', null, $account->uid);
+  	  
+  	  foreach($flags['multistream_favs'] as $nid => $flag) {
+  	    $nids[$nid] = $nid; 
+  	  }
+  	  if(!empty($nodes)) {
+  	    return node_load_multiple($nids);
+  	  }
+
+  	  return array();
+  	  
+  	  //TODO Finish
+  	  $streams = flag_get_user_flags('stream', null, $account->uid);
+  	  break;
+  	case 'owned':
+  	  if(!$account->uid) {
+  	    return array();
+  	  }
+  	  $sql = "SELECT nid FROM {node} n WHERE n.type = 'multistream' AND status = 1 AND uid = $account->uid ORDER BY title ASC";  	 
+  	  $nids = db_query($sql)->fetchAllKeyed(0,0);
+  	  
+  	  if(!empty($nids)) {
+    	  return node_load_multiple($nids);
+  	  }
+  	  
+  	  return array();
+  	    
+  	  break;
+  	case 'browse':
+  	  break;
+  	
+  }
+  
+  return array();
+}
+
+function sr_core_node_insert($node) {
+  sr_core_node_save($node);
+}
+
+function sr_core_node_update($node) {
+  sr_core_node_save($node);  
+}
+
+function sr_core_node_save($node) {
+  if($node->type != 'multistream') {
+    return;
+  }
+  
+  flag('flag', 'multistream_favs', $node->nid);
+}
+
+function sr_core_entity_view_alter(&$build, $type) {
+  if($type == 'node') {
+    $node = $build['#node'];
+    if($node->type != 'multistream') {
+      return;
+    }
+    
+    if($build['#view_mode'] == 'teaser') {
+      $build['favorite'] = flag_create_link('multistream_favs', $node->nid);
+    }
+  }
+}
+
+function sr_core_preprocess_page(&$vars) {
+  drupal_add_css(drupal_get_path('module', 'sr_core').'/css/sr_core.css');
+  drupal_add_js(drupal_get_path('module', 'sr_core').'/js/sr_core.js');  
+  drupal_add_library('system', 'ui.dialog');
+}
+
+function sr_core_form_alter(&$form, &$form_state, $form_id) {
+  if (!user_is_logged_in() && user_access('use hybridauth') &&
+  in_array($form_id, array_filter(variable_get('hybridauth_forms', array('user_login', 'user_login_block'))))) {
+    $message = '<p><strong>Join us FREE!</strong> Sign up using social or email:</p>';
+    $form['hybridauth']['#prefix'] = $message;
+    $form['hybridauth']['#weight'] = -100;
+    //$form['actions']['#weight'] = 0;
+    
+    if($form_id == 'user_login_block') {
+      $form['#prefix'] = '<div id="sr-login-form">';
+      $form['#suffix'] = '</div>';
+      
+      $form['actions']['submit']['#ajax'] = array(
+          'event' => 'click',
+          'callback' => 'sr_core_ajax_register_form_callback',
+          'wrapper' => 'sr-login-form',
+          'method' => 'html',
+          'effect' => 'fade',
+          'progress' => array('message'=>null),          
+      );
+      $form['actions']['submit']['#id'] = 'user-login-submit';    
+    
+    }    
+  }
+}
+
+function sr_core_form_user_register_form_alter(&$form, &$form_state) {
+  drupal_add_css(drupal_get_path('module', 'sr_core').'/css/sr_core.css');
+  drupal_add_js(drupal_get_path('module', 'sr_core').'/js/sr_core.js');  
+
+  $form['message'] = array(
+  	'#markup' => '<div>Create and share multi-streams with gamers around the world! Join us, it\'s fast and free!</div>',
+    '#weight' => -100,
+  );
+  
+  unset($form['account']['name']['#description']);  
+  unset($form['account']['mail']['#description']);
+  unset($form['account']['pass']['#description']);
+  
+  $form['account']['pass']['#pre_render'][] = 'sr_core_register_password_pre_render';
+        
+  $form['account']['name']['#size'] = 30;
+  $form['account']['mail']['#size'] = 30;
+  
+  $form['actions']['submit']['#ajax'] = array(
+      'event' => 'click',
+      'callback' => 'sr_core_ajax_register_form_callback',
+      'wrapper' => 'block-formblock-user-register',
+      'method' => 'html',
+      'effect' => 'fade',
+  );
+  $form['actions']['submit']['#id'] = 'user-register-submit';  
+}
+
+function sr_core_ajax_register_form_callback(&$form, &$form_state) {
+  if(!$form_state['executed']) {
+    return $form;
+  }
+
+  global $user;
+  if(isset($form['account'])) {
+    $commands[] = ajax_command_invoke('#block-formblock-user-register', 'dialog', array('close'));
+  }
+  $commands[] = ajax_command_remove('#block-panels-mini-header-mega-menu');
+  $commands[] = ajax_command_invoke(null, 'srUserLogin');
+  
+  $commands_extra = sr_core_ajax_user_login_callback_commands();
+  $commands = array_merge($commands, $commands_extra);
+  
+  return array('#type'=>'ajax', '#commands'=>$commands);
+}
+
+function sr_core_register_password_pre_render($element) {
+  $element['pass1']['#attributes'] = array('placeholder'=>'Password');
+  $element['pass2']['#attributes'] = array('placeholder'=>'Confirm Password');
+  unset($element['pass1']['#description']);
+  unset($element['pass2']['#description']);
+  return $element;
+}
+
+function sr_core_block_info() {
+  // This example comes from node.module.
+  $blocks['social_share'] = array(
+      'info' => t('Share to (Social)'),
+      'cache' => DRUPAL_CACHE_PER_PAGE,
+  );
+  $blocks['sr_user_menu'] = array(
+      'info' => t('SR User Menu'),
+      'cache' => DRUPAL_CACHE_PER_USER,
+  );
+  
+  return $blocks;
+}  
+
+function sr_core_block_view($delta = '') {
+  // This example is adapted from node.module.
+  $block = array();
+
+  switch ($delta) {
+  	case 'social_share':
+  	  $block['subject'] = t('Share to');
+  	  $block['content'] = sr_core_block_social_share();
+  	  break;
+	  case 'sr_user_menu':
+	    global $user;
+	    $block['subject'] = t('User Menu');	   
+	    $vars['user'] = $user; 
+	    $block['content'] = theme('sr_user_menu', $vars);
+	    break;  	  
+  }
+  return $block;
+}
+
+function sr_core_theme() {
+  $return = array(
+      'sr_user_menu' =>  array(
+          'template' => 'sr-user-menu',
+          'path' => drupal_get_path('module', 'sr_core') . '/templates',
+          'render element' => 'user'
+      ),      
+  );
+  
+  return $return;
+}
+
+function sr_core_block_social_share() {
+  drupal_add_js(drupal_get_path('module', 'sr_core').'/js/sr_core.js');
+  
+  $url = url(current_path(), array('absolute'=>true));
+  
+  $output = '
+    <ul class="share-to">
+      <li><a href="https://twitter.com/intent/tweet?url='.$url.'"><span class="twitter popup"></span></a>
+      <li><a href="http://www.facebook.com/share.php?u='.$url.'"><span class="facebook popup"></span></a>
+      <li><a href="https://plus.google.com/share?url='.$url.'"><span class="google popup"></span></a>
+      <li><a href="http://www.reddit.com/submit?url='.$url.'"><span class="reddit popup"></span></a>
+      <li><a href="#"><span class="copy"></span></a>          
+    </ul>
+  ';
+  
+  return $output;
+}
+
+function sr_core_preprocess_sr_user_menu(&$vars) {
+  $vars['user_picture'] = theme('user_picture', array('account'=>$vars['user'], 'style_name'=>'userprofile12'));
+}

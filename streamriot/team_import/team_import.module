@@ -1,0 +1,133 @@
+<?php
+function team_import_menu() {
+	$items['team-import'] = array(
+			'page callback' => 'team_import_page_import',
+			'access callback' => true,
+			'title' => 'Import Test',
+	);
+	
+	return $items; 
+}
+
+function team_import_cron() {
+  team_import_get_twitch_teams();
+}
+
+function team_import_page_import() {
+	$teams = team_import_get_twitch_teams();
+	
+	dpm($teams);
+	return '';
+}
+
+function team_import_get_twitch_teams() {
+  module_load_include('module', 'media_internet');
+	//get all teams from twitch
+	$limit = variable_get('team_import_limit', 200);
+	$headers = array('Accept: application/vnd.twitchtv.v3+json');
+	
+	$teams = array();
+
+	for($offset = 0;$offset < $limit;$offset+=100) {
+		
+		$json = _curl_get('https://api.twitch.tv/kraken/teams?limit=100&offset='.$offset, $headers);
+
+		$results = json_decode($json, true);
+		
+		foreach($results['teams'] as $item) {
+		  $save = false;
+		  $title = $item['display_name'];
+		  $team_name = $item['name'];
+		  $logo = $item['logo'];
+		  $bg = $item['background'];
+		  $nid = db_query("SELECT entity_id FROM {field_data_field_twitch_team_name} WHERE field_twitch_team_name_value = :name", array(':name'=>$team_name))->fetchField();
+		  if(!$nid && $title) {
+        $node = new stdClass();
+        $node->type = 'multistream';
+        $node->title = $title;
+        $node->field_twitch_team_name['und'][0]['value'] = $team_name;
+        node_object_prepare($node);
+        $node->language = 'und'; // Or e.g. 'en' if locale is enabled
+        $node->uid = 1;
+        $node->status = 1; //(1 or 0): published or not
+        $node->promote = 0; //(1 or 0): promoted to front page
+        $node->comment = 0; // 0 = comments disabled, 1 = read only, 2 = read/write
+        $node->is_new = true;
+        $save = true;
+        $node = node_submit($node);
+        
+		  } else {
+		    //$node = node_load($nid);
+		    continue;
+		  }
+
+		  try {
+		    // Save the remote file
+		    if($logo) {
+		      if(empty($node->field_cover)) {
+		        $save = true;
+  		      $provider = media_internet_get_provider($logo);
+  		      $file = $provider->save();
+  		      $node->field_cover['und'][0]['fid'] = $file->fid;
+		      }
+		    }
+		    if($bg) {
+		      if(empty($node->field_player_background)) {
+		        $save = true;
+  		      $provider = media_internet_get_provider($bg);
+  		      $file = $provider->save();
+  		      $node->field_player_background['und'][0]['fid'] = $file->fid;
+		      }
+		    }		  
+		  }
+		  catch (Exception $e) {		    
+		    //return;
+		  }		  
+		  
+		  if(empty($node->field_streams)) {
+		    $save = true;
+        $streams = team_import_get_team_streams($team_name);
+        foreach($streams as $stream) {
+
+          $node->field_streams['und'][]['target_id'] = $stream->stream_id;
+        }	    
+		  }
+		  
+		  if($save) {
+  		  node_save($node);
+		  }
+		  	  		  
+		  $teams[] = $node;
+		}
+	}		
+	
+	return $teams;
+}
+
+function team_import_get_team_streams($team_name) {
+  //$headers = array('Accept: application/vnd.twitchtv.v3+json');
+  $json = _curl_get('http://api.twitch.tv/api/team/'.$team_name.'/all_channels.json');  
+  $results = json_decode($json, true);
+  $streams = array();
+  
+  if(!isset($results['channels'])) {
+    return $streams;
+  }
+  
+  foreach($results['channels'] as $item) {
+    if(!isset($item['channel']['name'])) {
+      continue;
+    }
+    $channel = $item['channel']['name'];
+    if($channel == 'tetet') {
+      $test = 'test';
+    }
+    if($stream = stream_import_twitch_stream($channel)) {
+      $streams[] = $stream;
+    } else {
+      $test = 'test';
+    }
+  } 
+  
+  return $streams;
+}

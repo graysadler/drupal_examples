@@ -1,0 +1,154 @@
+#multistream-manage {
+  position: relative;
+  min-height: 300px;
+}
+#manage-open {
+  cursor: pointer;
+}
+#manage-selection {
+  display: none;
+  position: absolute;
+  top: 2em;
+  z-index: 1000;
+  height: 300px;
+  overflow-y: auto;
+}
+#manage-selection article:hover {
+  background: #efefef;
+  cursor: pointer;
+}
+#manage-form #field-streams-values input,
+#manage-form #field-streams-values select, 
+#manage-form div[id*="field-streams-add-more-wrapper"]  { display: none!important; }
+
+.panel-actions-wrapper {
+  position: absolute;
+  z-index: 999;
+  width: 100%;
+  right: 0;
+}
+.panel-actions-popup {
+  position: absolute;
+  background: white;
+  z-index: 1000;
+  width: 100%;
+  margin: 0;
+}
+.panel-actions-popup li {
+  display: none;
+  list-style: none;  
+}
+
+.panel-overlay, 
+.overlay {
+  height: 100%;
+  width: 100%;
+  background-color: black;
+  opacity: .5;
+  position: absolute;
+  z-index: 100;
+  pointer-events: auto;
+}
+
+.panel-actions-popup .open,
+.overlay-content {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.overlay-content {
+  position: absolute;
+  top: 50%;
+  z-index: 101;
+  background-color: white;
+  width: 100%;
+  padding: 1em;
+}
+
+.multistream-owner #mini-panel-player_menu ul.panel-actions li.fav {
+  display: none;
+}
+
+body:not(.anon) .panel-actions .save {
+
+}
+
+body:not(.anon) .multistream-owner .panel-actions .save,
+body:not(.anon) .chained .panel-actions .save {
+  display: inline!important;
+}
+
+body:not(.anon) .multistream-owner .panel-actions .fav,
+body:not(.anon) .chained .panel-actions .fav {
+  display: none!important; 
+}
+
+label[for*="edit-add-stream"] { display: block; }
+
+div[id*="edit-field-streams"] .flag-stream-favs { display: none; }
+
+
+#riot-player-wrapper {
+  height: 100%;
+  width: 100%;  
+  overflow: visible;
+  position: absolute;
+  z-index: 0;
+}
+#player-messages {
+  z-index: 2;
+}
+#riot-player {
+  width:100%;
+  height: 100%;  
+  overflow:visible;
+  position: absolute;
+  top:0;
+  left: 0;
+  z-index: 1;
+}
+
+.stream-wrapper .stream-actions .remove {
+  display: none;
+}
+
+#block-panels-mini-now-playing .stream-wrapper .stream-actions .remove,
+#block-panels-mini-player-manage .stream-wrapper .stream-actions .remove
+ {
+  display: block;
+}
+
+#player-wrapper .pager li {
+  border: none;
+  background-color: transparent;
+  display: none;
+}
+
+#player-wrapper .pager li {
+  background-color: transparent;  
+}
+
+#player-wrapper .pager li.previous,
+#player-wrapper .pager li.next {
+  display: inline-block;
+}
+
+#player-wrapper .pager li a:hover {
+  background-color: transparent;
+}
+
+#player-wrapper .pager .ajax-progress {
+  display: none;
+}
+
+iframe img,
+iframe object {
+  display: block;
+  margin: auto;
+  text-align: center;
+}
+
+.page-embed #mini-panel-social_menu,
+.page-embed #mini-panel-player_menu {
+  display: none;
+}

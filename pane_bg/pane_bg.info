@@ -1,0 +1,7 @@
+name = Panels Pane Background
+description = Additional background styles for the Panels module.
+package = Panels
+dependencies[] = ctools
+dependencies[] = panels
+dependencies[] = page_manager
+core = 7.x

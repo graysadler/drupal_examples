@@ -1,0 +1,117 @@
+.hybridauth-icon-multistream {
+  display: block;
+  float: left;
+  width: 60px;
+  height: 60px;
+  opacity: 0.5;
+  filter: alpha(opacity=50);
+}
+.hybridauth-icon-multistream:hover {
+  opacity: 1;
+  filter: alpha(opacity=100);
+}
+.hybridauth-none-multistream {
+  background: transparent url(icons/openid.png) 0px 0px no-repeat;
+}
+.hybridauth-aol-multistream {
+  background: transparent url(icons/aol.png) 0px 0px no-repeat;
+}
+.hybridauth-facebook-multistream {
+  background: transparent url(icons/FacebookLg.png) 0px 0px no-repeat;
+}
+.hybridauth-foursquare-multistream {
+  background: transparent url(icons/foursquare.png) 0px 0px no-repeat;
+}
+.hybridauth-google-multistream {
+  background: transparent url(icons/google.png) 0px 0px no-repeat;
+}
+.hybridauth-linkedin-multistream {
+  background: transparent url(icons/linkedin.png) 0px 0px no-repeat;
+}
+.hybridauth-live-multistream {
+  background: transparent url(icons/live.png) 0px 0px no-repeat;
+}
+.hybridauth-myspace-multistream {
+  background: transparent url(icons/myspace.png) 0px 0px no-repeat;
+}
+.hybridauth-openid-multistream {
+  background: transparent url(icons/openid.png) 0px 0px no-repeat;
+}
+.hybridauth-twitter-multistream {
+  background: transparent url(icons/TwitterLg.png) 0px 0px no-repeat;
+}
+.hybridauth-yahoo-multistream {
+  background: transparent url(icons/yahoo.png) 0px 0px no-repeat;
+}
+
+.hybridauth-px500-multistream {
+  background: transparent url(icons/500px.png) 0px 0px no-repeat;
+}
+.hybridauth-disqus-multistream {
+  background: transparent url(icons/disqus.png) 0px 0px no-repeat;
+}
+.hybridauth-github-multistream {
+  background: transparent url(icons/github.png) 0px 0px no-repeat;
+}
+.hybridauth-goodreads-multistream {
+  background: transparent url(icons/goodreads.png) 0px 0px no-repeat;
+}
+.hybridauth-identica-multistream {
+  background: transparent url(icons/identica.png) 0px 0px no-repeat;
+}
+.hybridauth-instagram-multistream {
+  background: transparent url(icons/instagram.png) 0px 0px no-repeat;
+}
+.hybridauth-lastfm-multistream {
+  background: transparent url(icons/lastfm.png) 0px 0px no-repeat;
+}
+.hybridauth-mailru-multistream {
+  background: transparent url(icons/mailru.png) 0px 0px no-repeat;
+}
+.hybridauth-murmur-multistream {
+  background: transparent url(icons/murmur.png) 0px 0px no-repeat;
+}
+.hybridauth-odnoklassniki-multistream {
+  background: transparent url(icons/odnoklassniki.png) 0px 0px no-repeat;
+}
+.hybridauth-pixnet-multistream {
+  background: transparent url(icons/pixnet.png) 0px 0px no-repeat;
+}
+.hybridauth-plurk-multistream {
+  background: transparent url(icons/plurk.png) 0px 0px no-repeat;
+}
+.hybridauth-qq-multistream {
+  background: transparent url(icons/qq.png) 0px 0px no-repeat;
+}
+.hybridauth-sina-multistream {
+  background: transparent url(icons/sina.png) 0px 0px no-repeat;
+}
+.hybridauth-skyrock-multistream {
+  background: transparent url(icons/skyrock.png) 0px 0px no-repeat;
+}
+.hybridauth-tumblr-multistream {
+  background: transparent url(icons/tumblr.png) 0px 0px no-repeat;
+}
+.hybridauth-viadeo-multistream {
+  background: transparent url(icons/viadeo.png) 0px 0px no-repeat;
+}
+.hybridauth-vimeo-multistream {
+  background: transparent url(icons/vimeo.png) 0px 0px no-repeat;
+}
+.hybridauth-vkontakte-multistream {
+  background: transparent url(icons/vkontakte.png) 0px 0px no-repeat;
+}
+.hybridauth-yandex-multistream {
+  background: transparent url(icons/yandex.png) 0px 0px no-repeat;
+}
+/* Last used provider */
+.hybridauth-last-provider .hybridauth-icon-multistream {
+  opacity: 1;
+  filter: alpha(opacity=100);
+}
+.hybridauth-twitchtv-multistream {
+  background: transparent url(icons/TwitchLg.png) 0px 0px no-repeat;
+}
+span.register-email {
+  background: transparent url(icons/EmailLg.png) 0px 0px no-repeat;
+}

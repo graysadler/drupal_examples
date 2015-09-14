@@ -1,0 +1,298 @@
+<?php
+/**
+ * @file
+ * Code for the SevOne Persona feature.
+ */
+include_once 'sevone_persona.features.inc';
+
+/**
+ * @file
+ * sevone_persona.module
+ * Implements user identity tracking with global_filter and googleanalytic modules
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function sevone_persona_menu() {
+  $items['admin/config/people/persona'] = array(
+    'title' => 'Identity and Persona Tracking',
+    'description' => 'Map Google Analytics dimensions to personas',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('sevone_persona_admin_config'),
+    'access arguments' => array('administer site configuration'),
+    'file' => 'sevone_persona.admin.inc',
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_init() to:
+ * 1. Assign a global filter if the page being viewed is applicable
+ * 2. Insert Google Analytics tracking code if applicable
+ */
+function sevone_persona_init() {
+  // Check if we're viewing an entity with a global filter field
+  // If so, set this as the user's global variable
+  // TODO: move this somewhere else due to caching? Add to ajax call?
+  // TODO: is this safe? think about adding this for specific roles that exclude admins  
+  /* Commenting out because client doesn't want this functionality for now
+  if ($obj = menu_get_object()) {
+    $filters = global_filter_set_parameter(NULL, NULL, NULL); 
+    foreach ($filters as $filter) {
+      if (!empty($obj->{$filter['name']}['und'][0]['tid'])) {
+        // TODO: $obj->{$filter['name']}['und'][0]['tid'] is too specific to entity_reference, make this more flexible  
+        global_filter_set_on_session($filter['name'], array($obj->{$filter['name']}['und'][0]['tid']));
+      }
+    }
+  }*/
+   
+  if (!$filters = global_filter_get_session_value()) {
+    return;
+  }
+  
+  // Add js settings so we can alter outbound social links
+  $settings = NULL;
+  foreach ($filters as $name => $filter) {
+    $settings['sevone']['global_filters'][$name] = $filter;
+  } 
+  
+  if ($settings) {
+    drupal_add_js($settings, 'setting');
+    drupal_add_js(drupal_get_path('module', 'sevone_persona') . '/sevone_persona.js');
+  } 
+} 
+
+/**
+ * Implements hook_global_filter_value_alter() to send tracking to GA
+ */
+function sevone_persona_global_filter_value_alter($name, &$value) {
+  static $values;
+
+  // If persona filter is a string lookup tid
+  if ($name == 'field_persona' && !empty($value)) {
+    $term = NULL;
+    foreach ($value as $k => $v) {
+      $filter = str_replace('-', ' ', $v);
+      if (is_string($filter) && $terms = taxonomy_get_term_by_name($filter, 'persona')) {
+        foreach ($terms as $tid => $t) {
+          $value[$k] = $tid;
+          $term = $t;
+          break;
+        }
+      }
+    }
+  }
+  
+  // Prevent duplicate insertion
+  if (!empty($values[$name])) {
+    if ($values[$name] == $value) {
+      return;
+    }
+  }
+  $values[$name] = $value;
+  
+  // SevOne does not use googleanalytics module, but has a custom script added by third party
+  // No need to check if GA module is enabled, just presumed that GA tracking code has been implemented
+  $analytics = variable_get('sevone_persona_analytics', array());
+  
+  if (isset($analytics[$name]) && !empty($value)) {
+    // When a global filter is reset, it returns as an empty array so make sure there
+    // is a value in $value[0]
+    if(!empty($value[0])) {
+      if (empty($term) && !$term = taxonomy_term_load($value[0])) {
+        return;
+      }
+      
+      $key = $analytics[$name];
+      drupal_add_js("ga('set', '$key', '$term->name'); ga('send', 'event', 'persona', 'set', '$term->name');", array(
+        'type' => 'inline',
+        'scope' => 'footer',
+        'weight' => 100,
+      ));      
+    }
+  }
+}
+
+/**
+ * @implements hook_views_query_alter().
+ */
+function sevone_persona_views_query_alter(&$view, &$query)  {
+  // @todo - make configurable from UI
+  $views = array(
+    'sevone_learning_center_filter',
+    'sevone_supported_technologies',    
+    'sevone_partners',
+  );
+  
+  // views displays can be excluded by query tagging 'exclude_persona_filter'
+  if (!empty($query->options['query_tags']) && in_array('exclude_persona_filter', $query->options['query_tags'])) {
+    return;
+  }
+  
+  if (in_array($view->name, $views)) {
+    // If the global field_persona is set, alter the view, if not bail
+    if (!$filters = global_filter_get_session_value()) {
+      return;
+    }
+    
+    if (empty($filters['field_persona'])) {
+      return;
+    }
+    
+    module_load_include('inc', 'views', 'includes/handlers');
+    
+    $join = new views_join();
+    $join->table = 'taxonomy_index';
+    $join->field = 'nid';
+    $join->left_table = 'node';
+    $join->left_field = 'nid';
+    $join->type = 'INNER';
+    
+    $query->add_relationship('taxonomy_index', $join, 'taxonomy_index');
+    
+    $query->where[] = array(
+      'conditions' => array(
+        array(
+          'field' => 'taxonomy_index.tid',
+          'value' => $filters['field_persona'],
+          'operator' => 'IN', 
+          'type' => 'AND',
+        ),
+      ),  
+      'type' => 'AND',
+    );
+  }
+}
+
+/**
+ * Implements hook_ctools_plugin_directory().
+ *
+ * It simply tells panels where to find the .inc files that define various
+ * args, contexts, content_types. In this case the subdirectories of
+ * ctools_plugin_example/panels are used.
+ */
+function sevone_persona_ctools_plugin_directory($module, $plugin) {
+  if ($module == 'ctools' && !empty($plugin)) {
+    return "plugins/$plugin";
+  }
+}
+
+/**
+ * Implements hook_views_pre_render()
+ */
+function sevone_persona_views_pre_render(&$view) {
+  // Inject reset link
+  if ($view->name == 'persona' && $view->current_display == 'panel_pane_1' && $reset = sevone_persona_block_view('sevone_persona_block')) {
+    $view->attachment_before = $reset['content'];
+  }
+}  
+
+/**
+ * Implements hook_views_pre_render()
+ */
+function sevone_preprocess_views_view_fields(&$vars) {
+  $view = $vars['view'];
+
+  if ($view->name != 'persona') {
+    return;
+  }
+  
+  // If the global field_persona is set, alter the view, if not bail
+  if (!$filters = global_filter_get_session_value()) {
+    return;
+  }
+
+  if (empty($filters['field_persona'])) {
+    return;
+  }
+  
+  // Filters can be array or string
+  $persona_active = (is_array($filters['field_persona']) && in_array($vars['row']->tid, $filters['field_persona'])) ||
+    (is_string($filters['field_persona']) && $vars['row']->tid == $filters['field_persona']);
+  if (!empty($vars['fields']['nothing']) && $persona_active) {
+    $vars['fields']['nothing']->wrapper_prefix = '<div class="active-persona">' . $vars['fields']['nothing']->wrapper_prefix;
+    $vars['fields']['nothing']->wrapper_suffix .= '</div>';
+  }	
+}
+
+/**
+ * Implements hook_block_info()
+ */
+function sevone_persona_block_info() {
+  $blocks['sevone_persona_block'] = array(
+    'info' => t('SevOne Current Persona Selected'),
+    'cache' => DRUPAL_CACHE_PER_USER,
+  );
+  
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view()
+ */
+function sevone_persona_block_view($delta = '') {
+  switch ($delta) {
+    case 'sevone_persona_block':
+      $block['subject'] = '';
+      $block['content'] = '';      
+      
+      if ($filters = global_filter_get_session_value()) {
+        if (isset($filters['field_persona'])) {
+          $filter = $filters['field_persona'][0];
+          if (isset($filter)) {
+            $name = $filter;
+            // Allow filter to be numeric (tid) or string (term name)
+            if (is_numeric($filter)) {
+              $term = taxonomy_term_load($filter);
+              $name = $term->name;
+            }
+            $reset_text = t('You are currently viewing content for @persona. <a href="@persona_clear">Click here to reset.</a>',
+              array(
+                '@persona' => $name,
+                '@persona_clear' => url($_GET['q'], array('query' => array('clear-global-filters' => 'field_persona'))),
+              )
+            );
+            $content = '<p class="persona-selected">' . $reset_text . '</p>';
+            $block['content'] = $content;
+          }
+        }
+      }      
+      return $block;
+  }
+}
+
+/**
+ * Call on hook_install to create default filter
+ *
+ * Run manually via drush (with caution) drush ev '_sevone_persona_default_filter()';
+ */
+function _sevone_persona_default_filter() {
+  // Create a field_persona global filter
+  // No filter key, field or node property not found. So create it
+  $filters = variable_get('global_filters', array());
+  $key = count($filters) + 1;
+  $filters[] = array(
+    'name' => 'field_persona',
+    'block' => 'global_filter_'.$key,
+    'uses_view' => 0,
+    'field' => $field_name,
+    'view' => '',
+    'widget' => 'default_options_select',
+    'convert_to_range' => 0,
+    'label' => '',
+    'option_all_text' => '',
+    'confirm_question' => '',
+    'set_on_select' => 0,
+    'global_field_or_view_default' => array(
+        array(),
+    ),
+    'global_php_default' => '',
+  );
+  
+  // Update the filter variable and reset the cache
+  variable_set('global_filters', $filters);
+  variable_set('global_filter_num_filters', $key);
+  global_filter_set_parameter(NULL, NULL, NULL, TRUE);
+}

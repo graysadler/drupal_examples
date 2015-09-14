@@ -1,0 +1,162 @@
+<?php
+
+/**
+ * @file
+* Sets up the base table for our entity and a table to store information about
+* the entity types.
+*/
+
+
+/**
+ * Implements hook_schema().
+*/
+function stream_schema() {
+	$schema = array();
+
+	$schema['stream'] = array(
+			'description' => 'The base table for stream entities.',
+			'fields' => array(
+					'stream_id' => array(
+							'description' => 'Primary Key: Identifier for a stream.',
+							'type' => 'serial',
+							'unsigned' => TRUE,
+							'not null' => TRUE,
+					),
+					'channel' => array(
+							'description' => 'The channel name of the stream.',
+							'type' => 'varchar',
+							'length' => 255,
+							'not null' => TRUE,
+							'default' => '',
+					),
+					'thumbnail' => array(
+							'description' => 'The thumbnail of the stream',
+							'type' => 'varchar',
+							'length' => 500,
+							'not null' => FALSE,
+							'default' => '',
+					),
+					'screencap' => array(
+							'description' => 'The screencap of the stream',
+							'type' => 'varchar',
+							'length' => 500,
+							'not null' => FALSE,
+							'default' => '',
+					),
+					'url' => array(
+							'description' => 'The url of the stream',
+							'type' => 'varchar',
+							'length' => 500,
+							'not null' => FALSE,
+							'default' => '',
+					),
+					'viewers' => array(
+							'description' => 'Number of current viewers',
+							'type' => 'int',
+							'not null' => FALSE,
+							'default' => 0,
+					),
+					'is_live' => array(
+							'description' => 'Boolean value if stream is live or not',
+							'type' => 'int',
+							'not null' => TRUE,
+							'default' => 0,
+					),
+					'category' => array(
+							'description' => 'The taxonomy term id of the category',
+							'type' => 'int',
+							'not null' => TRUE,
+							'default' => 0,
+					),
+					'provider' => array(
+							'description' => 'The taxonomy term id of the provider',
+							'type' => 'int',
+							'not null' => TRUE,
+							'default' => 0,
+					),
+					'created' => array(
+							'description' => 'The Unix timestamp when the stream was created.',
+							'type' => 'int',
+							'not null' => TRUE,
+							'default' => 0,
+					),
+					'changed' => array(
+							'description' => 'The Unix timestamp when the stream was most recently updated.',
+							'type' => 'int',
+							'not null' => TRUE,
+							'default' => 0,
+					),
+					'data' => array(
+							'type' => 'blob',
+							'not null' => FALSE,
+							'size' => 'big',
+							'serialize' => TRUE,
+							'description' => 'A serialized array of additional data.',
+					),
+			),
+			'primary key' => array('stream_id'),
+			'unique keys' => array(
+					'provider' => array('provider', 'channel'),	
+			),
+			'indexes' => array(
+					'viewers' => array('viewers', 'category'),
+					'live_viewers' => array('viewers', 'is_live', 'category'),
+					'channel' => array('channel', 'is_live'),
+					'channel' => array('channel'),
+					'category' => array('category', 'is_live')
+			),
+	);
+	
+	$schema['stream_provider'] = array(
+			'description' => 'Stores information about defined stream providers.',
+			'fields' => array(
+					'id' => array(
+							'type' => 'serial',
+							'not null' => TRUE,
+							'description' => 'Primary Key: Unique model type identifier.',
+					),
+					'provider' => array(
+							'description' => 'The machine-readable name of this model type.',
+							'type' => 'varchar',
+							'length' => 255,
+							'not null' => TRUE,
+					),
+					'label' => array(
+							'description' => 'The human-readable name of this model type.',
+							'type' => 'varchar',
+							'length' => 255,
+							'not null' => TRUE,
+							'default' => '',
+					),
+					'weight' => array(
+							'type' => 'int',
+							'not null' => TRUE,
+							'default' => 0,
+							'size' => 'tiny',
+							'description' => 'The weight of this model type in relation to others.',
+					),
+					'data' => array(
+							'type' => 'text',
+							'not null' => FALSE,
+							'size' => 'big',
+							'serialize' => TRUE,
+							'description' => 'A serialized array of additional data related to this model type.',
+					),
+			) + entity_exportable_schema_fields(),
+			'primary key' => array('id'),
+			'unique keys' => array(
+					'provider' => array('provider'),
+			),
+	);
+	return $schema;
+}
+
+
+
+function stream_update_7001() {
+  db_query("UPDATE {stream} SET viewers = 0 WHERE viewers = ''");
+}
+
+function stream_update_7002() {
+  db_query("DELETE FROM {stream} WHERE provider = 1");
+}

@@ -1,0 +1,5 @@
+name = Twitch Team Import
+description = Importing of twitch teams
+core = 7.x
+
+dependencies[] = multistream

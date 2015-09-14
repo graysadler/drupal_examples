@@ -1,0 +1,527 @@
+<?php
+
+/**
+ * @file
+ * Module for the Model Entity - a starting point to create your own Entity
+ * and associated administration interface
+ */  
+
+
+/**
+ * Implement hook_entity_info().
+ *
+ * We define two entities here - the actual entity that will hold our domain
+ * specific information and an entity that holds information about the different
+ * types of entities. See here: http://drupal.org/node/977380 for a discussion on this
+ * choice.
+ */
+function stream_entity_info() {
+  $return['stream'] = array(
+    'label' => t('Stream'),
+    // The entity class and controller class extend the classes provided by the
+    // Entity API
+    'entity class' => 'Stream',
+    'controller class' => 'StreamController',
+    'base table' => 'stream',
+    'fieldable' => FALSE,
+    'entity keys' => array(
+        'id' => 'stream_id',
+    ),
+    // Bundles are defined by the model types below
+    'bundles' => array(
+    	'stream' => array(
+    		'label' => t('Stream'),
+    		'admin' => array(
+    				'path' => 'admin/structure/streams/manage/%stream',
+    				'real path' => 'admin/structure/streams/manage/stream',
+    				'bundle argument' => 4,
+    				'access arguments' => array('administer streams'),    				
+    		),
+    	),
+    ),
+    // Bundle keys tell the FieldAPI how to extract information from the bundle objects
+    'bundle keys' => array(
+      'bundle' => 'stream',
+    ),
+    'label callback' => 'entity_class_label',
+    'uri callback' => 'entity_class_uri',
+    'creation callback' => 'stream_create',
+    'access callback' => 'stream_access',
+    'module' => 'stream',
+    // The information below is used by the ModelUIController (which extends the EntityDefaultUIController)
+    'admin ui' => array(
+      'path' => 'admin/content/streams',
+      'file' => 'stream.admin.inc',
+      'controller class' => 'StreamUIController',
+      'menu wildcard' => '%stream',
+    ),
+  );
+  // The entity that holds information about the entity types
+  /*
+  $return['stream_provider'] = array(
+  		'label' => t('Provider'),
+  		'entity class' => 'StreamProvider',
+  		'controller class' => 'StreamProviderController',
+  		'base table' => 'stream_provider',
+  		'fieldable' => TRUE,
+  		'bundle of' => 'stream',
+  		'exportable' => TRUE,
+  		'entity keys' => array(
+  				'id' => 'id',
+  				'provider' => 'provider',
+  				'label' => 'label',
+  		),
+  		'access callback' => 'stream_provider_access',
+  		'module' => 'stream',
+  		// Enable the entity API's admin UI.
+  		'admin ui' => array(
+  				'path' => 'admin/structure/stream_providers',
+  				'file' => 'stream_provider.admin.inc',
+  				'controller class' => 'StreamProviderUIController',
+  		),
+  );
+  */
+  return $return;
+}
+
+
+/**
+ * Implements hook_entity_info_alter().
+ *
+ * We are adding the info about the model types via a hook to avoid a recursion
+ * issue as loading the model types requires the entity info as well.
+ *
+ * @todo This needs to be improved
+ */
+function stream_entity_info_alter(&$entity_info) {
+  return;
+  
+	foreach (stream_get_providers() as $type => $info) {
+    $entity_info['stream']['bundles'][$type] = array(
+      'label' => $info->label,
+      'admin' => array(
+        'path' => 'admin/structure/streams/manage/%stream_provider',
+        'real path' => 'admin/structure/streams/manage/' . $type,
+        'bundle argument' => 4,
+        'access arguments' => array('administer stream providers'),
+      ),
+    );
+  }
+}
+  
+
+/**
+ * Gets an array of all model types, keyed by the type name.
+ *
+ * @param $type_name
+ *   If set, the type with the given name is returned.
+ * @return ModelType[]
+ *   Depending whether $type isset, an array of model types or a single one.
+ */
+function stream_get_providers($type_name = NULL) {
+	// entity_load will get the Entity controller for our model entity and call the load
+	// function of that object - we are loading entities by name here.
+	$types = entity_load_multiple_by_name('stream_provider', isset($type_name) ? array($type_name) : FALSE);
+	return isset($type_name) ? reset($types) : $types;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function stream_permission() {
+  // We set up permisssions to manage entity types, manage all entities and the
+  // permissions for each individual entity
+  $permissions = array(
+    'administer streams' => array(
+      'title' => t('Administer streams'),
+      'description' => t('Create and delete fields for streams, and set their permissions.'),
+    ),
+  );
+
+  return $permissions;  
+}
+
+
+/**
+ * Determines whether the given user has access to a model.
+ *
+ * @param $op
+ *   The operation being performed. One of 'view', 'update', 'create', 'delete'
+ *   or just 'edit' (being the same as 'create' or 'update').
+ * @param $model
+ *   Optionally a model or a model type to check access for. If nothing is
+ *   given, access for all models is determined.
+ * @param $account
+ *   The user to check for. Leave it to NULL to check for the global user.
+ * @return boolean
+ *   Whether access is allowed or not.
+ */
+function stream_access($op, $stream = NULL, $account = NULL) {
+  if (user_access('administer streams', $account)) {
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
+
+/**
+ * Access callback for the entity API.
+ */
+function stream_provider_access($op, $type = NULL, $account = NULL) {
+	return user_access('administer stream providers', $account);
+}
+
+/**
+ * Menu argument loader; Load a model type by string.
+ *
+ * @param $type
+ *   The machine-readable name of a model type to load.
+ * @return
+ *   A model type array or FALSE if $type does not exist.
+ */
+function stream_provider_load($type) {
+  return stream_get_providers($type);
+}
+
+
+/**
+ * Fetch a model object. Make sure that the wildcard you choose 
+ * in the model entity definition fits the function name here.
+ *
+ * @param $model_id
+ *   Integer specifying the model id.
+ * @param $reset
+ *   A boolean indicating that the internal cache should be reset.
+ * @return
+ *   A fully-loaded $model object or FALSE if it cannot be loaded.
+ *
+ * @see model_load_multiple()
+ */
+function stream_load($stream_id, $reset = FALSE) {
+  $streams = stream_load_multiple(array($stream_id), array(), $reset);
+  return reset($streams);
+}
+
+
+/**
+ * Load multiple models based on certain conditions.
+ *
+ * @param $model_ids
+ *   An array of model IDs.
+ * @param $conditions
+ *   An array of conditions to match against the {model} table.
+ * @param $reset
+ *   A boolean indicating that the internal cache should be reset.
+ * @return
+ *   An array of model objects, indexed by model_id.
+ *
+ * @see entity_load()
+ * @see model_load()
+ */
+function stream_load_multiple($stream_ids = array(), $conditions = array(), $reset = FALSE) {
+  return entity_load('stream', $stream_ids, $conditions, $reset);
+}
+
+
+/**
+ * Deletes a model.
+ */
+function stream_delete(Model $stream) {
+  $stream->delete();
+}
+
+
+/**
+ * Delete multiple models.
+ *
+ * @param $model_ids
+ *   An array of model IDs.
+ */
+function stream_delete_multiple(array $stream_ids) {
+  entity_get_controller('stream')->delete($stream_ids);
+}
+
+
+/**
+ * Create a model object.
+ */
+function stream_create($values = array()) {
+  return entity_get_controller('stream')->create($values);
+}
+
+
+/**
+ * Saves a model to the database.
+ *
+ * @param $model
+ *   The model object.
+ */
+function stream_save(Stream $stream) {
+  return $stream->save();
+}
+
+/**
+ * Saves a model type to the db.
+ */
+function stream_provider_save(StreamProvider $type) {
+	$type->save();
+}
+
+/**
+ * Deletes a model type from the db.
+ */
+function stream_provider_delete(StreamProvider $type) {
+	$type->delete();
+}
+
+/**
+ * URI callback for models
+ */
+function stream_uri(Stream $stream){
+  return array(
+    'path' => 'stream-id/' . $stream->stream_id,
+  );
+}
+
+
+/**
+ * Menu title callback for showing individual entities
+ */
+function stream_page_title(Stream $stream){
+  return $stream->channel;
+}
+
+
+/**
+ * Sets up content to show an individual model
+ * @todo - get rid of drupal_set_title();
+ */
+function stream_page_view($stream, $view_mode = 'full') {    
+  dpm($view_mode);
+	$controller = entity_get_controller('stream');  
+  $content = $controller->view(array($stream->stream_id => $stream));
+  drupal_set_title($stream->channel);
+  return $content;
+}
+
+/**
+ * Adds our theme specificiations to the Theme Registry.
+ */
+function stream_theme($existing, $type, $theme, $path) {
+	return array(
+			'stream' => array(
+					'variables' => array('element' => null),
+					'template' => 'stream',
+					'path' => drupal_get_path('module', 'stream').'/templates',
+			),
+	);
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function stream_views_api() {
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'stream') . '/views',
+  );
+}
+
+
+
+
+/**
+ * Implements hook_menu_local_tasks_alter().
+ */
+function stream_menu_local_tasks_alter(&$data, $router_item, $root_path) {
+  // Add action link 'admin/structure/models/add' on 'admin/structure/models'.
+  if ($root_path == 'admin/content/streams') {
+    $item = menu_get_item('admin/content/streams/add');
+    if ($item['access']) {
+      $data['actions']['output'][] = array(
+        '#theme' => 'menu_local_action',
+        '#link' => $item,
+      );
+    }
+  }
+}
+
+
+/**
+ * The class used for model entities
+ */
+class Stream extends Entity {
+  
+  public function __construct($values = array()) {
+    parent::__construct($values, 'stream');
+  }
+
+  protected function defaultLabel() {
+    return $this->channel;
+  }
+
+  protected function defaultUri() {
+    return array('path' => 'stream/' . $this->stream_id);
+  } 
+  
+  public function uri() {
+    return '';
+  }
+}
+
+/**
+ * The class used for model type entities
+ */
+class StreamProvider extends Entity {
+
+	public $type;
+	public $label;
+
+	public function __construct($values = array()) {
+		parent::__construct($values, 'stream_provider');
+	}
+
+}
+
+/**
+ * The Controller for Model entities
+ */
+class StreamController extends EntityAPIController {
+  public function __construct($entityType) {
+    parent::__construct($entityType);
+  }
+
+
+  /**
+   * Create a model - we first set up the values that are specific
+   * to our model schema but then also go through the EntityAPIController
+   * function.
+   * 
+   * @param $type
+   *   The machine-readable type of the model.
+   *
+   * @return
+   *   A model object with all default fields initialized.
+   */
+  public function create(array $values = array()) {
+    // Add values that are specific to our Model
+    $values += array( 
+      'stream_id' => '',
+      'channel' => '',
+      'thumbnail' => '',
+    	'screencap' => '',
+    	'url' => '',
+    	'viewers' => '',
+    	'is_live' => '',
+    	'category' => '',
+    	'provider' => '',		
+      'created' => '',
+      'changed' => '',
+      'data' => '',
+    );
+    
+    $stream = parent::create($values);
+    return $stream;
+  }
+  
+  /**
+   * Overriding the buldContent function to add entity specific fields
+   */
+  public function buildContent($entity, $view_mode = 'full', $langcode = NULL, $content = array()) {
+   
+    $content = parent::buildContent($entity, $view_mode, $langcode, $content);
+    //$content['model_sample_data'] =  array(
+      //'#markup' => theme('model_sample_data', array('model_sample_data' => check_plain($entity->data['sample_data']), 'model' => $entity)),
+    //);
+
+    //image
+    $content['image'] = '';
+    if($entity->thumbnail) {
+      $content['image'] = theme('image', array('path'=>$entity->thumbnail, 'width'=>66, 'height'=>46, 'attributes'=>array('style'=>'height:46px;width:66px;')));
+    }
+    //title
+    $content['channel'] = '<div class="channel">' . $entity->channel . '</div>';
+    //viewers
+    $content['viewers'] = number_format($entity->viewers, 0);
+    //fav
+    $content['favorite'] = flag_create_link('stream_favs', $entity->stream_id);
+    $content['stream_id'] = $entity->stream_id;
+    $content['provider'] = $entity->provider;
+    $content['channel'] = $entity->channel;
+    //remove
+    $term = taxonomy_term_load($entity->category);
+    $content['category'] = $term->name;
+    
+    $content['position'] = '';
+    if(isset($entity->stream_pos)) {
+      $content['position'] = $entity->stream_pos;
+    }
+      
+    return $content;
+  }
+  
+  public function uri() {
+    return '';
+  }
+  
+}
+
+/**
+ * The Controller for Model entities
+ */
+class StreamProviderController extends EntityAPIControllerExportable {
+	public function __construct($entityType) {
+		parent::__construct($entityType);
+	}
+
+	/**
+	 * Create a model type - we first set up the values that are specific
+	 * to our model type schema but then also go through the EntityAPIController
+	 * function.
+	 *
+	 * @param $type
+	 *   The machine-readable type of the model.
+	 *
+	 * @return
+	 *   A model type object with all default fields initialized.
+	 */
+	public function create(array $values = array()) {
+		// Add values that are specific to our Model
+		$values += array(
+				'id' => '',
+				'is_new' => TRUE,
+				'data' => '',
+		);
+		$provider = parent::create($values);
+		return $provider;
+	}
+}
+
+function stream_preprocess_stream(&$vars) {
+  $vars['stream_id'] = $vars['stream']->stream_id;
+}
+
+function stream_search_api_index_items_alter(array &$items, SearchApiIndex $index) {
+  if($index->item_type != 'stream') {
+    return;
+  }
+  
+  $cats = stream_import_get_games();
+  foreach ($items as $id => &$item) {
+    if(isset($cats[$item->category])) {
+      $item->category = $cats[$item->category];
+    }
+  }
+}
+
+
+function stream_load_stream_by_channel($channel) {
+  $controller = new StreamController('stream');
+  $streams = $controller->load(false, array('channel'=>$channel));
+  if(empty($streams)) {
+    return false;
+  }
+
+  return array_shift($streams);
+}

@@ -1,0 +1,13 @@
+#block-formblock-user-register {display:none;}
+
+form[id*="user-register"] .register-email {display: none;}
+form[id*="user-register-form"] label {
+  display: block;
+}
+form[id*="user-register-form"] label.required {
+  color: #3c4650;
+}
+form[id*="user-register-form"] input[id*="user-register-submit"] {
+  float: left;
+  text-shadow: none;
+}

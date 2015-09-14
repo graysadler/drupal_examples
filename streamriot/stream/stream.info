@@ -1,0 +1,15 @@
+name = Stream
+description = Provides custom entity for Streams
+core = 7.x
+
+dependencies[] = entity
+;dependencies[] = views
+
+files[] = stream.admin.inc
+files[] = stream_provider.admin.inc
+;files[] = model_type.admin.inc
+;files[] = views/model.views.inc
+;files[] = views/model_handler_link_field.inc
+;files[] = views/model_handler_delete_link_field.inc
+;files[] = views/model_handler_edit_link_field.inc
+;files[] = views/model_handler_model_operations_field.inc

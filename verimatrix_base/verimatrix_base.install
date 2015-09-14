@@ -1,0 +1,96 @@
+<?php 
+
+function verimatrix_base_install() {
+  $modules = array(
+    'uuid_features',      
+  );
+  
+  module_enable($modules);
+ 
+  theme_enable(array('verimatrix'));
+  
+  variable_set('theme_default', 'verimatrix');
+  variable_set('site_name', 'Verimatrix');
+     
+  // Run all update hooks on install
+  for ($i = 7000; $i < 8000; $i++) {
+    $candidate = 'verimatrix_base_update_' . $i;
+    if (function_exists($candidate)) {
+      //$candidate();
+    }
+  }
+  
+  drupal_set_installed_schema_version('verimatrix_base', 7000);
+}
+
+/**
+ * Enable Verimatrix features
+ */
+function verimatrix_base_update_7001() {
+  module_enable(array('verimatrix_helper'));
+  
+  $modules = array(
+      'media_browser_plus',
+  );
+  
+  module_enable($modules);
+  
+  $features = array(
+      'verimatrix_core',
+      'verimatrix_locale',
+  );
+  
+  module_enable($features);
+  features_revert($features);
+}
+
+/**
+ * Enable Verimatrix features
+ */
+function verimatrix_base_update_7002() {
+  $features = array(
+      'verimatrix_blog',
+      'verimatrix_campaign',
+      'verimatrix_corporate',
+      'verimatrix_document',
+      'verimatrix_entities',
+      'verimatrix_event',
+      'verimatrix_isotope',
+      //'verimatrix_locale',
+      'verimatrix_news',
+      'verimatrix_newsletter',
+      'verimatrix_partner',
+      'verimatrix_press_release',
+      'verimatrix_radioactivity',
+      'verimatrix_resource',
+      'verimatrix_share',
+      'verimatrix_slides',
+      'verimatrix_solution',
+      'verimatrix_success_story',
+      'verimatrix_user_profile',
+      'verimatrix_video',
+      'verimatrix_webform',
+      'verimatrix_webinar',
+  );
+  module_enable($features);
+  features_revert($features);
+
+  $features = array(
+      'verimatrix_default_content',
+      'verimatrix_footer',
+      'verimatrix_header',
+      'verimatrix_main_nav',
+      'verimatrix_mega_menus',
+      'verimatrix_utility_nav',
+  );
+  module_enable($features);
+  features_revert($features);
+}
+
+function verimatrix_base_update_7003() {
+  $view_name = 'blog';
+  $view_display_name = "page_1";
+  $view = views_get_view($view_name);
+  $view->display[$view_display_name]->display_options['enabled'] = FALSE;
+  views_save_view($view);
+}

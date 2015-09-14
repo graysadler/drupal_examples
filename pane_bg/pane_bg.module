@@ -1,0 +1,61 @@
+<?php
+/**
+ * @file
+ * pane_bg.module
+ * Custom panel pane backgrounds
+ */
+/**
+ * Implements hook_ctools_plugin_directory().
+ */
+function pane_bg_ctools_plugin_directory($owner, $plugin_type) {
+  if ($owner == 'panels') {
+    return "plugins/$plugin_type";
+  }
+}
+
+function pane_bg_preprocess_html(&$variables) {
+  // Add conditional stylesheets for admin pages on admin theme.
+  if (arg(0)=="admin") {
+    // reference your own stylesheet
+    drupal_add_css(drupal_get_path('module', 'pane_bg') . '/plugins/styles/background.css', array('weight' => CSS_THEME));
+  }
+}
+
+function pane_bg_preprocess_panels_pane(&$vars) {
+  if (!empty($vars['pane_bg']['classes_array'])) {
+    foreach ($vars['pane_bg']['classes_array'] as $class) {
+      $vars['classes_array'][] = $class;
+    }
+  }
+  
+  if (!empty($vars['pane_bg']['title_attr'])) {
+    $vars['title_attributes_array']['style'] = $vars['pane_bg']['title_attr']['style'];
+    $vars['title_attributes_array']['class'] = array_merge($vars['title_attributes_array']['class'], $vars['pane_bg']['title_attr']['class']);
+  }  
+  
+  if (!empty($vars['pane_bg']['style'])) {
+    $vars['attributes_array']['style'] = $vars['attributes_array']['style'] . $vars['pane_bg']['style'];
+  }
+  
+  if (!empty($vars['pane_bg']['id'])) {
+    $vars['attributes_array']['id'] = $vars['pane_bg']['id'];
+  }  
+
+}
+
+function pane_bg_preprocess_panels_default_style_render_region(&$vars) {
+  if (!empty($vars['pane_bg']['classes_array'])) {
+    foreach ($vars['pane_bg']['classes_array'] as $class) {
+      $vars['classes_array'][] = $class;
+    }
+  }
+
+  if (!empty($vars['pane_bg']['style'])) {
+    $vars['attributes_array']['style'] = $vars['attributes_array']['style'] . $vars['pane_bg']['style'];
+  }
+
+  if (!empty($vars['pane_bg']['id'])) {
+    $vars['attributes_array']['id'] = $vars['pane_bg']['id'];
+  }
+
+}

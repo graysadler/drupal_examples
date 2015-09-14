@@ -1,0 +1,8 @@
+<?php 
+
+/**
+ * Implements hook_install()
+ */
+function sevone_persona_install() {
+  _sevone_persona_default_filter();
+}

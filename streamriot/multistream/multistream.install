@@ -1,0 +1,49 @@
+<?php
+
+/**
+ * @file
+* Sets up the base table for our entity and a table to store information about
+* the entity types.
+*/
+
+
+/**
+ * Implements hook_schema().
+*/
+function multistream_schema() {
+	$schema = array();
+
+	$schema['multistream_twitter_feeds'] = array(
+			'description' => 'Stores a cached response to multistream twitter feeds',
+			'fields' => array(
+					'nid' => array(
+							'description' => 'Primary Key: node id.',
+							'type' => 'serial',
+							'unsigned' => TRUE,
+							'not null' => TRUE,
+					),
+			    'updated' => array(
+			        'description' => 'The Unix timestamp when the response was created.',
+			        'type' => 'int',
+			        'not null' => TRUE,
+			        'default' => 0,
+			    ),
+					'data' => array(
+							'type' => 'blob',
+							'not null' => FALSE,
+							'size' => 'big',
+							'serialize' => TRUE,
+							'description' => 'A serialized array of additional data.',
+					),
+			),
+			'primary key' => array('nid'),
+	);
+	
+	return $schema;
+}
+
+function multistream_update_7000() {
+  if(!db_table_exists('multistream_twitter_feeds')) {
+    drupal_install_schema('multistream');
+  }
+}

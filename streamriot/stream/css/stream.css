@@ -1,0 +1,40 @@
+.stream-wrapper {
+	position:relative;
+	height: 100%;
+	padding-bottom: 15px;
+	border-bottom: solid 2px;
+	margin-bottom: 15px;
+}
+.stream-wrapper .image-overlay,
+.stream-wrapper .image,
+.stream-wrapper .image-wrapper {
+	width:66px;
+	height:46px;
+}
+.stream-wrapper .image-wrapper {
+  float: left;
+  margin-right: 1em;
+}
+.stream-wrapper .image-overlay {
+	position:absolute;
+	top:0;
+	left:0;
+}
+.stream-wrapper .channel {
+  font-weight: bold;
+}
+.stream-wrapper .channel,
+.stream-wrapper .viewers,
+.stream-wrapper .category {
+    line-height: 1.4em;
+}
+
+.stream-wrapper .viewers:after {
+  content: " viewers";
+}
+.stream-actions {
+	display:none;
+	position:absolute;
+	top:0;
+	left:75px;
+}

@@ -1,0 +1,659 @@
+<?php
+/**
+ * @file
+ * Code for the Trader feature.
+ */
+
+include_once 'trader.features.inc';
+
+/**
+ * Implements hook_menu
+ */
+function trader_menu() {
+  $items['node/%trader_strat_node/backtest'] = array(
+      'title' => 'Backtest',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('trader_form_backtest_strat', 1),
+      'access arguments' => array('administer site configuration'),
+      'type' => MENU_LOCAL_TASK,
+      'file' => 'includes/backtest.inc',
+  );
+  
+  $items['order'] = array(
+      'title' => 'Order Testing',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('trader_form_test_orders'),
+      'access arguments' => array('administer site configuration'),
+      'type' => MENU_LOCAL_TASK,
+      'file' => 'includes/order.inc',
+  );
+  
+  $items['tx'] = array(
+      'title' => 'TX Lookup',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('trader_form_tx'),
+      'access callback' => TRUE,
+      'type' => MENU_LOCAL_TASK,
+      'file' => 'includes/common.inc',
+  );
+  
+  $items['admin/config/trader'] = array(
+      'title' => 'Trader',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('trader_admin_form'),
+      'access arguments' => array('administer site configuration'),
+  );  
+  $items['admin/config/trader/settings'] = array(
+      'title' => 'Trader Settings',
+      'type' => MENU_DEFAULT_LOCAL_TASK,
+      'weight' => -10,
+  );
+  return $items;
+}
+
+/**
+ * Node load function used for menu lookups
+ */
+function trader_strat_node_load($nid) {
+  $node = node_load($nid);
+  if ($node->type == 'strategy') {
+    return $node;
+  }
+  
+  return FALSE;
+}
+
+/**
+ * Implement hook_form_CLIENT_ID_alter to hook into webform using strat_dev component
+ */
+function trader_form_webform_client_form_alter(&$form, &$form_state) {
+  if (!empty($form['submitted']['strat_dev'])) {
+    // Add submit callback
+    $form['#submit'][] = 'trader_webform_strat_dev_submit';
+  }
+}
+
+/**
+ * Implements hook_preprocess_node
+ */
+function trader_preprocess_node(&$vars) {
+  $node = $vars['node'];
+  $view_mode = $vars['view_mode'];
+  
+  $node_wrapper = entity_metadata_wrapper('node', $node);
+  
+  if ($view_mode != 'full') {
+    return;
+  }
+  
+  // Add order form to setups
+  if ($node->type == 'setup') {
+    $form = drupal_get_form('trader_form_order', $node, 'setup');
+
+    $vars['content']['order_form']['#markup'] = drupal_render($form);
+  }
+  
+  // Add order form to orders
+  if ($node->type == 'order') {
+    $form = drupal_get_form('trader_form_order', $node, 'order');
+  
+    $vars['content']['order_form']['#markup'] = drupal_render($form);
+    
+    if ($node_wrapper->field_order_id->value()) {
+      if (!$node->uid) {
+        return;
+      }
+      // Show the broker order details
+      $account_id = $node_wrapper->field_account->value();
+      global $oanda_accounts;
+      $account = $oanda_accounts[$node->uid];
+      
+      $order = $account->order($node_wrapper->field_order_id->value(), $account_id);
+      dpm($order);
+    }
+  }
+    
+  // Add chart 
+  if ($node->type == 'setup' || $node->type == 'backtest' || $node->type == 'strategy') {
+   
+    $strat = $node->type == 'strategy' ? $node_wrapper : entity_metadata_wrapper('node', $node_wrapper->field_strategy->value());
+    
+    // Add chart
+    drupal_add_js(drupal_get_path('module', 'trader') . '/js/trader_chart.js');
+    
+    $vars['content']['chart']['#markup'] = '<div id="chart" style="width:100%; height:600px;"></div>';
+    
+    // Load studies to use on chart
+    $instrument = $strat->field_instrument->value();
+
+    // Load candles
+    $gran = $strat->field_fractal->value(); 
+    if ($node->type == 'setup') {
+      $end = $node_wrapper->field_candle_time->value() + (60 * 60);
+      $start_data = FALSE;
+    } elseif ($node->type == 'backtest') {
+      $start_data = $node_wrapper->field_backtest_start->value() - (60 * 60 * 24 * 1);
+      $end = $node_wrapper->field_backtest_end->value();
+    } else {
+      // strategy
+    }
+    
+    $candles = &drupal_static('trader_candles');
+    
+    if (!isset($candles)) {
+      if ($node->type == 'strategy') {
+        $candles[$instrument->name][$gran] = oanda_get_bidask_ticks($instrument->name, FALSE, FALSE, $gran, FALSE, 4000);        
+      } else {
+        $candles[$instrument->name][$gran] = oanda_get_bidask_ticks($instrument->name, $start_data, $end, $gran, FALSE);
+      }
+    }    
+    
+    if (empty($candles[$instrument->name][$gran])) {
+      return;
+    }
+    
+    // If this is a backtest generated on the fly, the studies should
+    // be stored in a static variable
+    $studies = &drupal_static('trader_studies_all');
+    
+    if (!isset($studies)) {
+      // Loop through and store studies
+      foreach ($strat->field_studies->value() as $key => $fc) {
+        $study = $strat->field_studies[$key]->field_study->value();
+        $study_load[$study] = $strat->field_studies[$key]->field_study_value->value();
+      }
+    
+      $studies_all = FALSE;
+      if (!empty($study_load)) {
+        // LOAD studies
+        $studies_all = trader_get_studies($candles, $instrument->name, $study_load, FALSE);
+      }
+      $studies = $studies_all;
+      
+      //$studies = $studies_all[$instrument->name][$gran];
+    } 
+    
+    if ($data = trader_chart_generate_settings($studies[$instrument->name][$gran])) {
+      $settings['trader']['chart']['data'] = $data;
+      drupal_add_js($settings, array('type' => 'setting'));
+    }
+  }
+  
+  // Add setups if this is a strategy node
+  if ($node->type == 'strategy') {
+    $vars['content']['setups']['#markup'] = views_embed_view('trade_setups', 'all', $node->nid);
+  }
+}
+
+/**
+ * Implements hook_node_presave
+ */
+function trader_node_presave($node) {
+  global $user;
+  
+  // Send SMS alert about setup
+  if ($node->type == 'setup') {
+    $wrapper = entity_metadata_wrapper('node', $node);
+    if ($wrapper->field_setup_status->value() != 'completed') {
+      return;
+    }
+    
+    $strat = $wrapper->field_strategy;
+    
+    // Author is author of strategy
+    $uid = $strat->author->uid->value();
+    $node->uid = $uid;
+    
+    $node->title .= ' ' . $node->field_price[LANGUAGE_NONE][0]['value'];
+    
+    if ($strat->field_sms_alert->value() && module_exists('twilio')) {
+      $account = user_load($uid);
+      
+      $sent = twilio_send(
+          $account->twilio_user['number'],
+          'SETUP ALERT: ' . $node->title . ' ' . url('node/'.$node->nid, array('absolute'=>TRUE)),
+          $account->twilio_user['country']
+          //!empty($form_state['values']['media']) ? $form_state['values']['media'] : NULL
+          // TODO send pic of chart?
+      );
+      if (!$sent) {
+        watchdog('trader', 'Unable to send SMS setup alert.', NULL, WATCHDOG_ERROR);
+      }
+    }
+    
+    return;
+  }
+  
+  if ($node->type == 'order') {
+    return;      
+    // This is all OLD
+    // Send order request to broker
+    $wrapper = entity_metadata_wrapper('node', $node);
+    if (!$wrapper->is_new->value()) {
+      return;
+    }
+    
+    // Author is author of setup
+    if (!$node->uid && $wrapper->field_setup->value()) { 
+      $node->uid = $wrapper->field_setup->author->uid->value();
+    }
+    
+    $op = array(
+      'price' => $wrapper->field_price->value(),
+      'stopLoss' => $wrapper->field_stop_loss->value(),
+      'side' => $wrapper->field_side->value(),
+      'takeProfit' => $wrapper->field_take_profit->value(),
+      'units' => $wrapper->field_units->value(),   
+      'instrument' => $wrapper->field_instrument->name->value(),
+      'type' => $wrapper->field_order_type->value(),
+    );
+    
+    if (!$account_id = $wrapper->field_account->value()) {
+      $account_id = $wrapper->field_setup->field_strategy->field_account->value();
+    }
+    $op['account'] = $account_id;
+    
+    $result = oanda_order($op);
+   
+    // If ordered, save the order info
+    if (!empty($result['order_tx'])) {
+      $order = $result['order_tx'];
+      $node->field_order_id['und'][0]['value'] = $order->id;
+      $node->field_updated['und'][0]['value'] = $order->time;
+      $node->field_order_status['und'][0]['value'] = 'ordered';
+    }
+    
+    // If a trade was executed as a result of the order, then save the trade info
+    // Commenting out for now
+    // TODO add back in?
+    /*
+    if (!empty($result['trade_tx'])) {
+      $trade = $result['trade_tx'];
+      
+      $trade_wrapper = trader_prepare_trade_from_order($wrapper);
+      $trade_wrapper->field_trade_id->set($trade->id);
+      $trade_wrapper->field_updated->set(floor($trade->time));
+      $trade_wrapper->field_trade_open_date->set(floor($trade->time));
+      $trade_wrapper->save();
+    }
+    */
+  }  
+}
+
+/**
+ * Implements hook_node_update
+ */
+function trader_node_update($node) {
+  if ($node->type == 'order') {
+    $original = $node->original;
+    
+    // If the order status has been updated to order then run checks to see if we can order
+    if ($original->field_order_status[LANGUAGE_NONE][0]['value'] == 'holding' && 
+        $node->field_order_status[LANGUAGE_NONE][0]['value'] == 'pending') {
+    
+      global $oanda_accounts;
+      global $user;
+    
+      $oanda = $oanda_accounts[$node->uid];
+    
+      $wrapper = entity_metadata_wrapper('node', $node);
+      $strat_wrapper = $wrapper->field_setup->field_strategy;
+    
+    
+      if (!$account_id = $wrapper->field_account->value()) {
+        $account_id = $wrapper->field_setup->field_strategy->field_account->value();
+      }
+    
+      // Check for open trades and don't order if more than max trades
+      $max_trades = $strat_wrapper->field_max_trades->value();
+      $trades = $oanda->trades($account_id);
+      $num_trades = count($trades->trades);
+      $can_order = TRUE;
+      if ($num_trades >= $max_trades) {
+        $can_order = FALSE;
+      }
+    
+      // If can order and automated, submit the order
+      if ($strat_wrapper->field_automate->value() && $can_order) {
+        $op = array(
+            'price' => $wrapper->field_price->value(),
+            'stopLoss' => $wrapper->field_stop_loss->value(),
+            'side' => $wrapper->field_side->value(),
+            'takeProfit' => $wrapper->field_take_profit->value(),
+            'units' => $wrapper->field_units->value(),
+            'instrument' => $wrapper->field_instrument->name->value(),
+            'type' => $wrapper->field_order_type->value(),
+            'order_nid' => $node->nid,
+        );
+
+        $op['account'] = $account_id;
+    
+        $debug = variable_get('trader_debug', FALSE);
+    
+        if (!$debug) {
+          $result = oanda_order($op);
+          $node->order_result = $result;
+          drupal_register_shutdown_function('_trader_order_update_after_insert', $node);
+        }
+      } else {
+        drupal_register_shutdown_function('_trader_order_update_to_holding', $node);
+      }
+    }  
+  }
+}
+
+/**
+ * Implements hook_node_insert
+ */
+function trader_node_insert($node) {
+  if ($node->type == 'order') {
+    global $oanda_accounts;
+    global $user;
+    
+    $oanda = $oanda_accounts[$node->uid];
+    
+    // Update the order's clientExtensions and tradeExtensions
+    $wrapper = entity_metadata_wrapper('node', $node);
+    $strat_wrapper = $wrapper->field_setup->field_strategy;
+    
+    if ($order_id = $wrapper->field_order_id->value()) {
+      $result = oanda_order_update_extensions($node, $wrapper->field_account->value(), $order_id);
+    }
+   
+
+    // Author is author of setup
+    if (!$node->uid && $wrapper->field_setup->value()) {
+      $node->uid = $wrapper->field_setup->author->uid->value();
+    }
+    
+    if (!$account_id = $wrapper->field_account->value()) {
+      $account_id = $wrapper->field_setup->field_strategy->field_account->value();
+    }
+    
+    // Check for open trades and don't order if more than max trades
+    $max_trades = $strat_wrapper->field_max_trades->value();
+    $trades = $oanda->trades($account_id);
+    $num_trades = count($trades->trades);
+    $can_order = TRUE;
+    if ($num_trades >= $max_trades) {
+      $can_order = FALSE;            
+    }
+    
+    // If can order and automated, submit the order
+    if ($strat_wrapper->field_automate->value()) {
+      if ($can_order) {
+        $op = array(
+            'price' => $wrapper->field_price->value(),
+            'stopLoss' => $wrapper->field_stop_loss->value(),
+            'side' => $wrapper->field_side->value(),
+            'takeProfit' => $wrapper->field_take_profit->value(),
+            'units' => $wrapper->field_units->value(),
+            'instrument' => $wrapper->field_instrument->name->value(),
+            'type' => $wrapper->field_order_type->value(),
+            'order_nid' => $node->nid,
+        );
+  
+        $op['account'] = $account_id;
+        
+        $debug = variable_get('trader_debug', FALSE);
+        
+        if (!$debug) {
+          $result = oanda_order($op);
+          $node->order_result = $result;
+          drupal_register_shutdown_function('_trader_order_update_after_insert', $node);
+        }
+      } else {
+        // Automated but can't order, so set to holding status
+        drupal_register_shutdown_function('_trader_order_update_to_holding', $node);        
+      }
+    } else {
+      // Not automated, so keep at pending status
+    }        
+  }
+}
+
+/**
+ * Update order nodes to holding status
+ * @param object $node
+ */
+function _trader_order_update_to_holding($node) {
+  if ($node->type != 'order') {
+    return;
+  }
+  
+  $wrapper = entity_metadata_wrapper('node', $node);
+  
+  $wrapper->field_order_status->set('holding');
+  $wrapper->save();
+}
+
+/**
+ * Update an order if order results exists
+ * @param object $node
+ */
+function _trader_order_update_after_insert($node) {
+  if ($node->type != 'order') {
+    return;
+  }
+  
+  $wrapper = entity_metadata_wrapper('node', $node);
+  
+  if (!empty($node->order_result)) {
+    if (!empty($node->order_result['order_tx'])) {
+      $order = $node->order_result['order_tx'];
+      $wrapper->field_order_id->set($order->id);
+      $wrapper->field_order_status->set('ordered');
+      $wrapper->field_order_type->set($order->type);
+      $wrapper->save();
+    }
+    
+    /* commenting this out for now as trades are saved with transaction sync
+    if (!empty($result['trade_tx'])) {
+      $trade = $result['trade_tx'];
+    
+      $trade_wrapper = trader_prepare_trade_from_order($wrapper);
+      $trade_wrapper->field_trade_id->set($trade->id);
+      $trade_wrapper->field_updated->set(floor($trade->time));
+      $trade_wrapper->field_trade_open_date->set(floor($trade->time));
+      $trade_wrapper->save();
+    }    
+    */
+  }
+}
+
+/**
+ * Implements hook_init to add js and include extra files
+ */
+function trader_init() {
+  trader_load_includes();
+  drupal_add_js(drupal_get_path('module', 'trader') . '/js/highstock/js/highstock.js');
+}
+
+/**
+ * Includes all necessary files
+ */
+function trader_load_includes() {
+  module_load_include('inc', 'trader', 'includes/common');
+  module_load_include('inc', 'trader', 'includes/setup');
+  module_load_include('inc', 'trader', 'includes/backtest');
+  module_load_include('inc', 'trader', 'includes/order');
+  module_load_include('inc', 'trader', 'includes/study');
+}
+
+/**
+ * Loads user accounts as a list of options
+ * @return multitype:NULL
+ */
+function _trader_user_account_options() {
+  global $oanda;
+  // Load user's account
+  $accounts = $oanda->accounts;
+  $options = array();
+  foreach ($accounts as &$a) {
+    $info = $oanda->account($a->id);
+    $options[$info->account->id] = $info->account->alias;
+  }
+  return $options;
+}
+
+/**
+ * Loads oanda user accounts in a global variable $oanda_accounts
+ * @return array of oanda accounts
+ */
+function trader_load_accounts() {
+  global $oanda_accounts;
+  
+  $users = trader_get_users();
+  
+  foreach ($users as $u) {
+    if (!empty($oanda_accounts[$u->uid])) {
+      continue;
+    }
+    
+    $wrapper = entity_metadata_wrapper('user', $u);
+    $api_env = $wrapper->field_oanda_api->value();
+    $api_key = $wrapper->field_api_key->value();
+    $account_id = $wrapper->field_account_id->value();
+    $oanda = new OandaWrap($api_env, $api_key, $account_id);
+    $oanda_accounts[$u->uid] = $oanda;    
+  }
+  
+  return $oanda_accounts;
+}
+
+/**
+ * Processes new transactions
+ */
+function trader_process_transactions() {
+  // Load all accounts
+  global $oanda_accounts;
+  
+  // Load the global $oanda_accounts array
+  trader_load_accounts();
+  
+  // Load prev tx IDs
+  $last_txs = variable_get('trader_account_txs', array());
+  
+  // Loop through active oanda users
+  foreach ($oanda_accounts as $uid => $oanda) {
+    // Load all subs for this account
+    $subs = $oanda->accounts;
+    // Loop through each sub
+    foreach ($subs as $sub) {
+      if (!$prev_id = !empty($last_txs[$uid][$sub->id]) ? $last_txs[$uid][$sub->id] : FALSE) {
+        $last_txs[$uid][$sub->id] = $sub->lastTransactionID;
+        continue;
+      }
+      $changes = $oanda->changes($sub->id, $prev_id);
+      // Loop through transactions
+      foreach ($changes->changes as $type => $txs) {
+        if (!is_array($txs)) {
+          continue;
+        }
+        foreach ($txs as $tx) {
+          $order = FALSE;
+          $wrapper = FALSE;
+          $trade_wrapper = FALSE;
+          
+          // Save any tx related updates here
+          if (isset($tx->clientExtensions)) {
+            $nid = $tx->clientExtensions->id;
+            if (!is_numeric($id)) {
+              $nid = str_replace('order_', '', $nid);
+            }
+            if (!$order = node_load($nid)) {
+              continue;
+            }
+            if (!$wrapper = entity_metadata_wrapper('node', $order)) {
+              continue;
+            }         
+          } else {
+            continue;
+          }
+          if (isset($tx->state)) {
+            if ($tx->state == 'FILLED') {
+              // Order was filled, check for clientExtensions
+              $wrapper->field_order_status->set($tx->state == 'filled');
+              $wrapper->field_order_id->set($tx->id);
+              $updated_time = floor($tx->filledTime);
+              $wrapper->field_updated->set($updated_time);
+              $wrapper->save();
+              
+              if (!$trade = trader_load_trade_by_id($sub->id, $tx->tradeOpenedID)) {
+                $trade_wrapper = trader_prepare_trade_from_order($wrapper);
+                $trade_wrapper->field_trade_id->set($tx->tradeOpenedID);
+                $trade_wrapper->field_updated->set($updated_time);
+                $trade_wrapper->field_trade_open_date->set($updated_time);
+                $trade_wrapper->save();   
+
+                // TODO Run trade management to update TP, SL, etc.
+                // This may end up being best run through a cron trademgmt job
+              } else {
+                // This shouldn't happen so watchdog it
+                watchdog('trader', 'Potential duplicate tx processed for account:' . $sub->id . ' and tx:' . $tx->id);
+              }
+            }
+            if ($tx->state == 'CANCELLED') {
+              // Order was filled, check for clientExtensions
+              $wrapper->field_order_status->set('declined');
+              $wrapper->field_order_id->set($tx->id);
+              $updated_time = floor($tx->cancelledTime);
+              $wrapper->field_updated->set($updated_time);
+              $wrapper->save();   
+            }   
+            if ($tx->state == 'PENDING') {
+              $updated_time = floor($tx->time);
+              
+              if ($wrapper->field_updated->value() < $updated_time) {
+                $wrapper->field_order_status->set('ordered');
+                $wrapper->field_order_id->set($tx->id);
+                $wrapper->field_updated->set($updated_time);
+                $wrapper->save();
+              }              
+            }
+            if ($tx->state == 'CLOSED') {
+              // Trade closed
+              if ($trade = trader_load_trade_by_id($sub->id, $tx->id)) {
+                $trade_wrapper = entity_metadata_wrapper('node', $trade);
+                $trade_wrapper->field_trade_close_date->set(floor($tx->closeTime));
+                $trade_wrapper->field_close_price->set($tx->averageClosePrice);
+                // TODO add stats like drawdown here?
+                $trade_wrapper->save();
+              } else {
+                // Create a trade node
+              }
+            }
+            
+            unset($wrapper);
+            unset($trade_wrapper);
+          }
+        }
+      }
+      
+      $last_txs[$uid][$sub->id] = $changes->lastTransactionID;
+    }     
+  }
+  
+  variable_set('trader_account_txs', $last_txs);
+}
+
+/**
+ * Returns a form for main trader module settings
+ */
+function trader_admin_form($form, &$form_state) {
+  $form['trader_status'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Trader Enabled'),
+    '#default_value' => variable_get('trader_status', FALSE),  
+    '#description' => t('When enabled, setups, orders and trades will be automated.'),
+  );
+  
+  $form['trader_debug'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Debug Mode'),
+      '#default_value' => variable_get('trader_debug', FALSE),
+      '#description' => t('When enabled, setups and orders will be created but not sent to Oanda.'),
+  );
+  
+  return system_settings_form($form);
+}

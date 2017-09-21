@@ -1,0 +1,5 @@
+<?php 
+
+function trader_update_7001() {
+  features_revert_module('trader');
+}

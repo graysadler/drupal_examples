@@ -1,0 +1,57 @@
+<?php 
+
+function m7_promo_update_7002() {
+    // Delete fc revisions
+    db_query("DELETE FROM field_collection_item_revision
+              WHERE item_id IN(
+                SELECT item_id FROM field_collection_item WHERE field_name IN('field_tier_list', 'field_tiers')
+              )");
+    
+    // Delete fc items
+    db_query("DELETE FROM field_collection_item
+              WHERE field_name IN('field_tier_list', 'field_tiers')");
+    
+    // Delete the instance
+    db_query("DELETE FROM field_config_instance
+              WHERE field_name IN('field_tier_list', 'field_tiers')");
+    
+    // Delete the field base
+    db_query("DELETE FROM field_config
+              WHERE field_name IN('field_tier_list', 'field_tiers')");
+    
+}
+
+function m7_promo_update_7003() {
+  // Revert the feature
+  features_revert_module('m7_promo');
+}
+
+function m7_promo_update_7004() {
+  // Revert the feature
+  features_revert_module('m7_promo');
+}
+
+/**
+ * Revert promo feature
+ */
+function m7_promo_update_7005() {
+  // Revert the feature
+  features_revert_module('m7_promo');
+}
+
+/**
+ * Revert promo feature
+ */
+function m7_promo_update_7006() {
+  // Revert the feature
+  features_revert_module('m7_promo');
+}
+
+/**
+ * Rebuild registry, enable video_playlist and revert promos
+ */
+function m7_promo_update_7007() {
+  registry_rebuild();
+  module_enable(array('m7_video_playlist'));
+  features_revert_module('m7_promo');
+}

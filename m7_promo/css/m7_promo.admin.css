@@ -1,0 +1,46 @@
+.field-type-color-field-rgb span.colorBox {
+  border: solid 1px #000;  
+}
+
+.field-type-color-field-rgb label {
+  margin-bottom: 1em;
+}
+
+.field-type-color-field-rgb .description {
+  margin-top: 1em;
+}
+
+body div.form-type-checkbox div.description {
+  display: inline;
+}
+
+.vertical-tabs .form-type-textfield input {
+  width: auto;
+}
+
+.field-name-field-promo-cta .link-field-column {
+  width: auto;
+}
+
+.field-name-field-promo-cta-link > div > div > label {
+  display: none;
+}
+
+.field-name-field-promo-cta .cta-item.cta-phone .field-name-field-promo-cta-link {
+  display: none;
+}
+
+.field-name-field-promo-cta .cta-item:not(.cta-phone) .field-name-field-promo-cta-phone,
+.field-name-field-promo-cta .cta-item:not(.cta-phone) .field-name-field-promo-cta-phone-text {
+  display: none;
+}
+
+.field-name-field-promo-cta .cta-item .link-field-title input,
+.field-name-field-promo-cta .cta-item .link-field-url {
+  width: 80%;
+}
+
+.field-name-field-promo-cta .cta-item .link-field-url {
+  /*margin-top: -32px;*/
+}
+

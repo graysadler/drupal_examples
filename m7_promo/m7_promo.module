@@ -1,0 +1,487 @@
+<?php
+/**
+ * @file
+ * Code for the Promotions feature.
+ */
+
+include_once 'm7_promo.features.inc';
+
+/**
+ * Implements hook_cron() 
+ */
+function m7_promo_cron() {
+  _m7_promo_set_active_promos();
+}
+
+/**
+ * Sets active promo(s)
+ */
+function _m7_promo_set_active_promos($obj = NULL) {
+  // Assuming scheduler_cron has run, we know that all published promos are ready to cache
+  $nodes = array();
+  
+  // If draggable view exists, grab order from that
+  if ($result = views_get_view_result('administration_promo', 'page')) {
+    foreach ($result as $item) {
+      $node = node_load($item->nid);
+      $nodes[$item->nid] = $node;
+    }  
+  } else {
+    // Otherwise, grab all promos, regardless of beings scheduled and ORDER BY scheduled publish date DESC
+    $result = db_query("SELECT n.nid, n.vid FROM {node} n LEFT JOIN {scheduler} s ON n.nid = s.nid WHERE n.type = 'promo' AND n.status = 1 ORDER BY s.publish_on DESC, n.created DESC");
+    
+    foreach ($result as $record) {
+      $node = node_load($record->nid, $record->vid, TRUE);
+      $nodes[$record->nid] = $node;
+    }
+  }
+
+  if ($obj) {
+    $nodes[$obj->nid] = $obj;
+  }
+  cache_set('promo_active', $nodes);  
+  
+  return !empty($nodes) ? $nodes : FALSE;
+}
+
+/**
+ * Implements hook_page_build() to insert promo elements into each page
+ */
+function m7_promo_page_build(&$page) {
+  // If on admin theme, bail
+  if (path_is_admin(current_path())) {
+    return;
+  }
+  
+  // Debug
+  //_m7_promo_set_active_promos();
+  
+  // Grab a list of active promos, bail if none
+  if (!$cache = cache_get('promo_active')) {
+    if (!$nodes = _m7_promo_set_active_promos()) {
+      return;
+    }
+  } else {
+    $nodes = $cache->data;
+  }
+  
+  if (empty($nodes)) {
+    return;
+  }
+    
+  // Loop through each promo and check if path matches current
+  foreach ($nodes as $node) {
+    $show_banner = FALSE;
+    $has_banner = FALSE;
+    
+    // Assuming first found active promo with banner should be displayed based on scheduling and creation date rules
+    // Show promo banner on all pages    
+    if (!$has_banner && !empty($node->field_promo_include_banner[LANGUAGE_NONE][0]['value'])) {
+      // Make sure that the banner is wanted
+      $has_banner = TRUE;
+      if (!empty($node->field_promo_banner[LANGUAGE_NONE][0]['value'])) {
+        $show_banner = TRUE;
+        $banner_id = 'promo-banner';        
+      }
+    }
+    
+    $page_match = FALSE;
+    $pages_rule = $node->field_promo_pages_rule[LANGUAGE_NONE][0]['value'];
+    
+    if (!empty($node->field_promo_pages[LANGUAGE_NONE][0]['value'])) {
+      $pages = $node->field_promo_pages[LANGUAGE_NONE][0]['value'];
+      
+      // Convert path to lowercase. This allows comparison of the same path
+      // with different case. Ex: /Page, /page, /PAGE.
+      $pages = drupal_strtolower($pages);
+      // Convert the Drupal path to lowercase
+      $path = drupal_strtolower(drupal_get_path_alias($_GET['q']));
+      // Compare the lowercase internal and lowercase path alias (if any).
+      $page_match = drupal_match_path($path, $pages);
+      if ($path != $_GET['q']) {
+        $page_match = $page_match || drupal_match_path($_GET['q'], $pages);
+      }
+      if ($pages_rule == 'except') {
+        $page_match = $page_match ? FALSE : TRUE;
+      } else if ($pages_rule == 'specific') {
+        $page_match = $page_match ? TRUE : FALSE;
+      }    
+    } else {
+      if ($pages_rule == 'except') {
+        $page_match = TRUE;
+      }
+    }
+
+    // If there is an active promo on this page, add it to page then bail from loop
+    if ($page_match || $show_banner) {    
+      // Check if modal and/or banner should be displayed      
+      $show_modal = FALSE;
+      if (!empty($node->field_promo_modal[LANGUAGE_NONE][0]['value'])) {
+        $show_modal = TRUE;
+      }
+      
+      $name = drupal_clean_css_identifier(strtolower($node->title));
+      $modal_id = $name . '-' . $node->nid;
+      
+      if ($show_modal && !isset($page['content']['promo_modal'])) {        
+        $modals_array = array('a|' . $node->nid .'|promo-modal');
+        $promo_type = $node->field_promo_template[LANGUAGE_NONE][0]['value'];        
+        $options['class'] = 'promo-modal promo-' . $promo_type;
+        
+        // Add visibility classes
+        if ($classes = _m7_promo_get_modal_viz_classes($node)) {
+          $options['class'] .= ' ' . implode(' ', $classes);
+        }
+        $options['freq'] = $node->field_promo_freq[LANGUAGE_NONE][0]['value'];
+        $options['delay'] = $node->field_promo_delay[LANGUAGE_NONE][0]['value'];
+        $options['opt_in_name'] = $name;
+        $options['modal_id'] = $modal_id;
+        $options['opt_out_min'] = $node->field_promo_modal_opt_out[LANGUAGE_NONE][0]['value'];
+        // Right now setting weight manually so it takes priority over modal panes
+        $options['weight'] = 0;
+        $options['modal_visitor'] = $node->field_promo_modal_visitor[LANGUAGE_NONE][0]['value'];
+        /* This is deprecated but leaving in for now
+        if ($show_banner) {
+          $options['onClose']['functionName'] = 'm7_promo_modalClose';
+          $options['onClose']['arg'] = $banner_id;          
+        }
+        */
+        $page['content']['promo_modal'][$options['modal_id']]['#markup'] = _iin_modal('iin_modal', $modals_array, NULL, $options);
+        drupal_add_js(drupal_get_path('module', 'm7_promo') . '/js/m7_promo.js');
+      }
+      
+      // Show the banner
+      if ($has_banner && !isset($page['header']['promo_banner'])) {
+        if (!empty($node->field_promo_banner[LANGUAGE_NONE][0]['value']) || $page_match) {
+          $banner_id = 'promo-banner';
+      
+          $banner = node_view($node, 'promo_banner');
+          unset($banner['field_promo_image']);
+      
+          $page['header']['promo_banner'][$modal_id] = $banner;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_entity_update
+ */
+function m7_promo_entity_update($node, $type) {
+  if ($type != 'node') {
+    return;
+  }
+  if ($node->type != 'promo') {
+    return;
+  }
+  _m7_promo_set_active_promos($node);  
+}
+
+/**
+ * Implements hook_entity_insert
+ */
+function m7_promo_entity_insert($node, $type) {
+  if ($type != 'node') {
+    return;
+  }
+  if ($node->type != 'promo') {
+    return;
+  }
+  _m7_promo_set_active_promos($node);
+}
+
+/**
+ * Implements hook_entity_delete
+ */
+function m7_promo_node_delete($node) {
+  if ($node->type != 'promo') {
+    return;
+  }
+  
+  $cache = cache_get('promo_active');
+  
+  $nodes = $cache->data;
+  
+  if (!empty($nodes[$node->nid])) {
+    unset($nodes[$node->nid]);
+    cache_set('promo_active', $nodes);
+  }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter()
+ */
+function m7_promo_form_promo_node_form_alter(&$form, &$form_state) {
+  // Add js
+  drupal_add_js(drupal_get_path('module', 'm7_promo') . '/js/m7_promo.js');
+
+  // Add CSS
+  drupal_add_css(drupal_get_path('module', 'm7_promo') . '/css/m7_promo.admin.css');
+  
+  $node = $form['#node'];
+  foreach ($form['field_promo_cta'][LANGUAGE_NONE] as $key => $cta) {
+    if (!is_numeric($key)) {
+      continue;
+    }
+    $class = 'cta-item';
+    if ($cta['field_promo_cta_type'][LANGUAGE_NONE]['#default_value'][0] == 'phone') {
+      $class .= ' cta-phone';
+    }
+    $form['field_promo_cta'][LANGUAGE_NONE][$key]['#prefix'] = '<div class="' . $class . '">';
+    $form['field_promo_cta'][LANGUAGE_NONE][$key]['#suffix'] = '</div>';    
+  }
+}
+
+/**
+ * Implements hook_preprocess_node() 
+ */
+function m7_promo_preprocess_node(&$vars) {
+  $node = $vars['node'];
+  $view_mode = $vars['view_mode'];
+  
+  if ($node->type != 'promo') {
+    return;
+  }
+  
+  if (empty($node->field_promo_template[LANGUAGE_NONE][0]['value'])) {
+    return;
+  }
+  
+  // Add css
+  drupal_add_css(drupal_get_path('module', 'm7_promo') . '/css/m7_promo.css');
+  
+  // Remove some unwanted elements
+  unset($vars['content']['rrssb']);
+  
+  // Add responsive classes to CTAs
+  foreach($node->field_promo_cta[LANGUAGE_NONE] as $key => $item) {
+    $cta = field_collection_item_load($item['value']);
+  
+    $viz = $cta->field_promo_cta_viz[LANGUAGE_NONE][0]['value'];
+  
+    $vars['content']['field_promo_cta'][$key]['#attributes']['class'][] = 'show-' . $viz;
+    
+    // Update the CTA if it's a phone number
+    $cta_type = $cta->field_promo_cta_type[LANGUAGE_NONE][0]['value'];
+    if ($cta_type == 'phone') {
+      $cta_phone = $cta->field_promo_cta_phone[LANGUAGE_NONE][0]['value'];
+      $cta_phone_text = $cta->field_promo_cta_phone_text[LANGUAGE_NONE][0]['value'];
+      $fcid = $node->field_promo_cta['und'][$key]['value'];
+      unset($vars['content']['field_promo_cta'][$key]['entity']['field_collection_item'][$fcid]['field_promo_cta_link']);
+      unset($vars['content']['field_promo_cta'][$key]['entity']['field_collection_item'][$fcid]['field_promo_cta_phone_text']);
+      
+      $vars['content']['field_promo_cta'][$key]['entity']['field_collection_item'][$fcid]['field_promo_cta_phone'][0]['#markup'] = '<a href="tel:' . $cta_phone . '">' . $cta_phone_text . '</a>';
+    }
+  }  
+  
+  $vars['attributes_array']['style'] = isset($vars['attributes_array']['style']) ? $vars['attributes_array']['style'] : '';
+  
+  if ($view_mode == 'full content' || $view_mode == 'full') {
+    $promo_type = $node->field_promo_template[LANGUAGE_NONE][0]['value'];
+    
+    //$vars['classes_array'][] = 'promo-' . $promo_type;
+    $vars['image'] = NULL;
+    
+    // Alter the rendered image style
+    $style = FALSE;
+    
+    switch ($promo_type) {
+      case 'text':
+        // Text only, remove the image
+        unset($vars['content']['field_promo_image']);
+        break;
+      case 'image-full':
+        $style = 'promo_full';
+        break;
+      case 'split':
+        $style = 'promo_split';
+        break;
+      case 'portrait':
+        $style = 'promo_portrait';
+        break;
+    }
+    
+    if ($style) {
+      //$vars['content']['field_promo_image'][0]['#image_style'] = $style;
+      $vars['image'] = image_style_url($style, $node->field_promo_image[LANGUAGE_NONE][0]['uri']);
+    }
+  
+    // Font color    
+    if (!empty($node->field_promo_font_color)) {
+      $font_color = $node->field_promo_font_color[LANGUAGE_NONE][0]['rgb'];
+      $vars['attributes_array']['style'] .= 'color:' . $font_color . '!important;';
+    }
+  
+    // Background color
+    if (!empty($node->field_promo_color)) {
+      $bg_color = $node->field_promo_color[LANGUAGE_NONE][0]['rgb'];
+      $vars['attributes_array']['style'] .= 'background-color:' . $bg_color . '!important;';
+    }
+    
+    // Format the number properly if one exists
+    if (!empty($node->field_promo_phone)) {
+      $style = '';
+      if ($font_color) {
+        $style = 'style="color:' . $font_color . ';" ';
+      }
+      
+      $vars['content']['field_promo_phone']['#prefix'] = '<a ' . $style . 'href="tel:' . $node->field_promo_phone[LANGUAGE_NONE][0]['value'] . '">';
+      $vars['content']['field_promo_phone']['#suffix'] = '</a>';
+    
+    } else {
+      // If no vanity phone number, make sure the callout is removed
+      unset($vars['content']['field_promo_phone_callout']);
+    }
+  }
+      
+  // Banner
+  if ($view_mode == 'promo_banner') {
+    $vars['theme_hook_suggestions'][] = 'node__promo_banner';
+    
+      // Font color
+    if (!empty($node->field_promo_banner_font)) {
+      $font_color = $node->field_promo_banner_font[LANGUAGE_NONE][0]['rgb'];
+      $vars['attributes_array']['style'] .= 'color:' . $font_color . '!important;';
+    }
+  
+    // Background color
+    if (!empty($node->field_promo_banner_bg)) {
+      $bg_color = $node->field_promo_banner_bg[LANGUAGE_NONE][0]['rgb'];
+      $vars['attributes_array']['style'] .= 'background-color:' . $bg_color . '!important;';
+    }
+  }
+  
+  // Add classes for device visibility 
+  if ($classes = _m7_promo_get_modal_viz_classes($node)) {
+    $vars['classes_array']  = array_merge($vars['classes_array'], $classes);
+  }  
+}
+
+/**
+ * Generate an array of classes to be used for modal visibility
+ */
+function _m7_promo_get_modal_viz_classes($node) {
+  $classes = FALSE;
+  
+  if (!empty($node->field_promo_device_viz)) {
+    $hide = array('mobile' => 1, 'tablet' => 1, 'desktop' => 1);
+    foreach($node->field_promo_device_viz['und'] as $visible) {
+      if (!empty($hide[$visible['value']])) {
+        unset($hide[$visible['value']]);
+      }
+    }
+  }
+  foreach ($hide as $device => $value) {
+    $classes[] = 'hide-' . $device;
+  }
+
+  return $classes;
+}
+
+/**
+ * Implements hook_theme()
+ */
+function m7_promo_theme() {
+  return array(
+    'node__promo' => array(
+      'render_element' => 'content',
+      'base hook' => 'node',
+      'template' => 'node--promo',
+      'path' => drupal_get_path('module', 'm7_promo') . '/templates',
+    ),   
+    'node__promo_banner' => array(
+      'render_element' => 'content',
+      'base hook' => 'node',
+      'template' => 'node--promo-banner',
+      'path' => drupal_get_path('module', 'm7_promo') . '/templates',
+    ),   
+  );
+}
+
+/**
+ * Implements hook_preprocess_m7_promo_banner()
+ */
+function m7_promo_preprocess_m7_promo_banner(&$vars) {
+  $node = $vars['node'];
+  $banner_id = $vars['banner_id'];
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() to update cached promos on admin page save
+ */
+function m7_promo_form_views_form_administration_promo_page_alter(&$form, &$form_state) {
+  $form['actions']['submit']['#submit'][] = 'm7_promo_views_submit';
+}
+
+/**
+ * Submit handler for draggable views form. Updates active promo cache.
+ */
+function m7_promo_views_submit($form, &$form_state) {
+  _m7_promo_set_active_promos();
+}
+
+/**
+ * Implements hook_field_widget_form_alter().
+ *
+ * Fixes bug with manualcrop settings not saving when field_collection present
+ */
+function m7_promo_field_widget_form_alter(&$element, &$form_state, $context) {
+  if (user_access('use manualcrop')) {
+    $widget = $context['instance']['widget'];
+
+    if (manualcrop_supported_widgets($widget['type'])) {
+      if (!empty($widget['settings']['manualcrop_enable'])) {
+
+        foreach (element_children($element) as $key) {
+          $element[$key]['#element_validate'][] = 'm7_promo_manualcrop_croptool_validate';
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Element validation handler; Validates each crop selection.
+ *
+ * If no manualcrop_data value found in form_state, it's likely due to a field_collection
+ * The field_collection module invokes field_attach_submit during validation which manualcrop wipes out manualcrop_data values
+ *
+ * TODO check if manualcrop or field_collection has an update that fixes this
+ */
+function m7_promo_manualcrop_croptool_validate($element, &$form_state) {
+  if (empty($form_state['manualcrop_data']['images'])) {
+    $form_tmp = array();
+    $form_state_tmp = $form_state;
+    $file = $element['#file'];
+    $element_tmp = $element;
+    $instance = field_info_instance($element['#entity_type'], $element['#field_name'], $element['#bundle']);
+     
+    // Execute manualcrop's process function to grab images
+    manualcrop_croptool_process($form_tmp, $form_state_tmp, $element_tmp, $file, array(), $instance);
+
+    if (!isset($form_state_tmp['manualcrop_data'])) {
+      return;
+    }
+
+    $form_state['manualcrop_data']['images'] = $form_state_tmp['manualcrop_data']['images'];
+    manualcrop_croptool_validate($element, $form_state);
+  }
+}
+
+function m7_promo_preprocess_fieldable_panels_pane(&$vars) {
+  if ($vars['elements']['#bundle'] == 'collapsible_message' && $vars['elements']['#view_mode'] == 'full') {
+    $entity = $vars['elements'];
+    drupal_add_css(drupal_get_path('module', 'm7_promo') . '/css/m7_promo.css');
+    // Font color
+    if (!empty($entity['field_promo_banner_font'])) {
+      $font_color = $entity['field_promo_banner_font'][0]['#markup'];
+      $vars['attributes_array']['style'] .= 'color:' . $font_color . '!important;';
+    }
+    // Background color
+    if (!empty($entity['field_promo_banner_bg'])) {
+      $bg_color = $entity['field_promo_banner_bg'][0]['#markup'];
+      $vars['attributes_array']['style'] .= 'background-color:' . $bg_color . '!important;';
+    }
+  }
+}

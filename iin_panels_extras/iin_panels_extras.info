@@ -1,0 +1,17 @@
+name = IIN Panels Extras
+description = A fun collection of general ctools panels plugins
+core = 7.x
+package = IIN Marketing
+
+
+files[] = plugins/content_types/copyright_widget.inc
+files[] = plugins/content_types/list_index.inc
+files[] = plugins/content_types/blog_curated_posts.inc
+files[] = plugins/content_types/blog_page_opt_in.inc
+files[] = plugins/content_types/blog_related_posts.inc
+files[] = plugins/content_types/blog_category_name.inc
+files[] = plugins/access/url_param_has_key.inc
+files[] = plugins/access/url_param_bypass.inc
+files[] = plugins/contexts/url_data.inc
+files[] = plugins/contexts/webform_submissions.inc
+files[] = plugins/contexts/atom_expanding_list.inc

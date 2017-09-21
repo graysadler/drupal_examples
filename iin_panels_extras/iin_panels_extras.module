@@ -1,0 +1,164 @@
+<?php
+
+/**
+ * Add bonus ctools plugins for custom panes.
+ */
+
+/**
+ * Implements hook_ctools_plugin_directory().
+ */
+function iin_panels_extras_ctools_plugin_directory($module, $plugin) {
+  if ($plugin == 'content_types' || $plugin == 'contexts' || $plugin == 'access' || $plugin == 'styles') {
+    return 'plugins/' . $plugin;
+  }
+}
+
+function iin_panels_extras_menu() {
+  $items['iin-panels-extras/atom-expanding-list-autocomplete'] = array(
+    'page callback' => '_iin_panels_extras_atom_expanding_list_autocomplete',
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_CALLBACK
+  );
+  $items['iin-blog/autocomplete'] = array(
+    'page callback' => '_iin_blog_autocomplete_callback',
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_CALLBACK
+  );
+  $items['admin/config/system/colors'] = array(
+      'title' => 'IIN Colors',
+      'description' => 'Manage a list of IIN approved colors to be used with color picker',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('iin_panels_extras_admin_settings_form'),
+      'access arguments' => array('administer site configuration'),
+      'type' => MENU_NORMAL_ITEM,
+  );  
+  return $items;
+}
+
+function _iin_blog_autocomplete_callback($string = "") {
+  $matches = array();
+
+  if (trim($string)) {
+    $result = db_select('node', 'n')
+    ->fields('n', array('nid', 'title'))
+    ->condition('type', 'blog_page')
+    ->condition('status', 1)
+    ->condition('title', db_like($string) . '%', 'LIKE')
+    ->range(0, 10)
+    ->execute();
+    foreach ($result as $node) {
+      $matches[$node->title . " [$node->nid]"] = check_plain($node->title);
+    }
+  }
+
+  drupal_json_output($matches);
+}
+
+function _iin_panels_extras_atom_expanding_list_autocomplete($string) {
+  $matches = array();
+  if ($string) {
+    $result = db_query("SELECT nid, title, type FROM node WHERE (nid = '$string' OR title LIKE '%$string%') AND (type = 'list')");
+    foreach ($result as $node) {
+      $matches[$node->nid] = $node->title . " [$node->nid]" ;
+    }
+  }
+  drupal_json_output($matches);
+}
+
+function iin_panels_extras_preprocess_page(&$vars) {
+  drupal_add_js(drupal_get_path('module', 'iin_panels_extras') . '/js/iin_panels_extras.js', array('scope' => 'footer', 'group' => JS_DEFAULT));
+}
+
+/**
+ * Admin config form for setting approved IIN colors in hex format
+ */
+function iin_panels_extras_admin_settings_form() {
+  $form = array();
+
+  $colors = variable_get('iin_default_colors', '');
+
+  $form['iin_default_colors'] = array(
+    '#type' => 'textarea',
+    '#title' => 'Site Colors',
+    '#description' => t('Enter a list of approved IIN colors in hex format separated by a space. Ex: #CCCCCC #DDDDDD'),
+    '#default_value' => !empty($colors) ? $colors : '',
+  );
+  
+  return system_settings_form($form);
+}
+
+/**
+ * Loads a file object by filename
+ */
+function _file_load_by_name($filename) {
+  $files = FALSE;
+
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'file')
+  ->propertyCondition('filename', $filename . '%', 'LIKE');
+  $result = $query->execute();
+  if (!empty($result['file'])) {
+    $files = entity_load('file', array_keys($result['file']));
+  }
+
+  return $files;
+}
+
+/**
+ * Store file usage when applicable
+ */
+function iin_panels_extras_panels_display_save($display) {
+  foreach ($display->panel_settings as $region => $settings) {
+    // Not interested if there are no style settings
+    if ($region == 'style_settings') {
+      continue;
+    }
+
+    // Not interested if not styled with region_class
+    if (!empty($settings['style'])) {
+      if ($settings['style'] != 'region_class') {
+        continue;
+      }
+    }
+    
+    // Make sure the settings are there
+    if (empty($display->panel_settings['style_settings'][$region]['region_class'])) {
+      continue;
+    }
+    
+    $region_class = $display->panel_settings['style_settings'][$region]['region_class'];
+    
+    // We don't know if there were different images before, so remove all file usages for this region
+    // Will have a chance to add back after
+    
+    // Create a numeric value for this region value as id's are stored numerically inside the file_usage table
+    $id = $display->did;
+    $sql = "SELECT * FROM {file_usage} WHERE module = 'iin_panels_extras' AND type = '$region' AND id=$id";
+    $results = db_query($sql);
+    foreach ($results as $result) {
+      $file = file_load($result->fid);
+      file_usage_delete($file, 'iin_panels_extras', $region, $id, 0);
+    }
+    
+    // Add file usage if needed
+    $fields = array('desktop', 'mobile', 'tablet');
+    foreach ($fields as $field) {
+      if (!empty($region_class['image_bg']['region_bg_' . $field]['image'])) {
+        $fid = $region_class['image_bg']['region_bg_' . $field]['image'];
+        if ($fid == 'none' || !$fid) {
+          continue;
+        }
+        
+        // Check if using legacy string version
+        if (!is_numeric($fid)) {
+          $files = _file_load_by_name($fid);
+          $file = array_shift($files);
+        } else {
+          $file = file_load($fid);
+        }
+        
+        file_usage_add($file, 'iin_panels_extras', $region, $id);
+      }
+    }
+  }
+}

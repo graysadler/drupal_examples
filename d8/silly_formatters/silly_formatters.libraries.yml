@@ -1,0 +1,7 @@
+silly_tooltip:
+  css: 
+    theme:
+      https://cdnjs.cloudflare.com/ajax/libs/qtip2/3.0.3/jquery.qtip.min.css: { type: external, minified: true }
+  js:
+    https://cdnjs.cloudflare.com/ajax/libs/qtip2/3.0.3/jquery.qtip.min.js: { type: external, minified: true }
+    js/silly_toolbar.js: {}

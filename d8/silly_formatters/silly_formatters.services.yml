@@ -1,0 +1,3 @@
+services: 
+  silly_formatters.slugify:
+    class: Drupal\silly_formatters\Service\SillySlugify

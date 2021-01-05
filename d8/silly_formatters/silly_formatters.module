@@ -1,0 +1,12 @@
+<?php 
+
+/**
+ * Implements hook_theme().
+ */
+function silly_formatters_theme($existing, $type, $theme, $path) {
+  return [
+      'silly_tooltip' => [
+          'variables' => ['item' => NULL],
+      ],
+  ];
+}

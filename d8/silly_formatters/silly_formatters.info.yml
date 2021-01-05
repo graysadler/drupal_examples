@@ -1,0 +1,5 @@
+name: 'Silly Formatters'
+description: 'Adds multiple silly field formatters to text fields'
+type: module
+core: 8.x
+package: Silly
